@@ -1,7 +1,7 @@
 {
-  "name": "qwenbridge",
+  "name": "qwensofia",
   "version": "1.0.0",
-  "description": "API compatível com OpenAI que conecta clientes ao Qwen via Playwright, com suporte a múltiplas contas, tool calling e sessões persistentes.",
+  "description": "QwenSofia: API compatível com OpenAI que conecta clientes ao Qwen via Playwright, com suporte a múltiplas contas, tool calling e sessões persistentes.",
   "main": "index.js",
   "scripts": {
     "start": "npx tsx src/index.ts",
@@ -14,8 +14,25 @@
     "benchmark:proxy": "npx tsx src/benchmarks/proxy-baseline.ts",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
+  "keywords": [
+    "qwensofia",
+    "qwen",
+    "openai",
+    "proxy",
+    "playwright"
+  ],
   "author": "Pedro Farias",
+  "maintainers": [
+    "Sofia"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SNollken/QwenSofia.git"
+  },
+  "homepage": "https://github.com/SNollken/QwenSofia#readme",
+  "bugs": {
+    "url": "https://github.com/SNollken/QwenSofia/issues"
+  },
   "license": "ISC",
   "dependencies": {
     "@hono/node-server": "^2.0.4",

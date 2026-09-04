@@ -1,6 +1,6 @@
 export const dashboardHtml = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QwenBridge</title><style>
+<title>QwenSofia</title><style>
 :root{color-scheme:dark;--bg:#07090d;--panel:#0e1218;--line:#252b35;--muted:#929aa7;--text:#edf1f7;--green:#48a64c;--blue:#62a5ff;--red:#ef6b6b}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px Inter,Segoe UI,Arial,sans-serif}
 button,input{font:inherit}
@@ -44,7 +44,7 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 </style></head><body>
 <header class="top">
-  <div class="brand"><span class="logo">Q</span>QwenBridge <span class="endpoint" id="endpoint">127.0.0.1</span></div>
+  <div class="brand"><span class="logo">Q</span>QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></div>
   <nav class="nav">
     <button type="button" class="active">Contas</button>
     <button type="button" onclick="location.href='/metrics'">Métricas</button>

@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2025 johngbl
- * QwenBridge - OpenAI-compatible proxy for Qwen
+ * QwenSofia - OpenAI-compatible proxy for Qwen
  */
 
 import { config } from "../core/config.ts";
@@ -160,7 +160,7 @@ export async function prepareThreadContextRollover(
         "Cannot rollover safely because no continuation summary is available",
       );
       throw new Error(
-        "QwenBridge context hard limit reached and no continuation summary is available yet. Retry after summary generation completes.",
+        "QwenSofia context hard limit reached and no continuation summary is available yet. Retry after summary generation completes.",
       );
     }
 
@@ -196,7 +196,7 @@ export async function prepareThreadContextRollover(
       "Continuation prompt would still exceed the hard-limit threshold",
     );
     throw new Error(
-      "QwenBridge rollover prompt is still too large after summarization. Reduce recent-turn retention or summary size.",
+      "QwenSofia rollover prompt is still too large after summarization. Reduce recent-turn retention or summary size.",
     );
   }
 

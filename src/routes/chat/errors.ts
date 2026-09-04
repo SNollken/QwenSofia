@@ -1,6 +1,6 @@
 /*
  * File: errors.ts
- * Project: QwenBridge
+ * Project: QwenSofia
  * Description: Error handling utilities for chat completions
  */
 

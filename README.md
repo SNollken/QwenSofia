@@ -1,10 +1,10 @@
-# QwenBridge
+# QwenSofia
 
 API compatível com OpenAI que conecta clientes ao **Qwen (`chat.qwen.ai`)** com suporte a múltiplas contas, tool calling robusto, uploads multimodais e sessões persistentes. Inclui modo Playwright com stealth para evasão de anti-bot, rotação com cooldown, variantes `-no-thinking`, sumarização de contexto, cache comprimido e observabilidade.
 
-Este fork adiciona **painel web de contas**, **criação/autenticação automática** e **auto-create no rate limit** — sem versionar banco SQLite, senhas ou perfis de browser.
+O **QwenSofia** é uma distribuição independente baseada no [QwenProxy-Saints](https://github.com/SaintsDEV/QwenProxy-Saints) e no QwenBridge. Ela adiciona **painel web de contas**, **criação/autenticação automática** e **auto-create no rate limit** — sem versionar banco SQLite, senhas ou perfis de browser.
 
-[![CI](https://github.com/johngbl/QwenBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/johngbl/QwenBridge/actions/workflows/ci.yml)
+[![CI](https://github.com/SNollken/QwenSofia/actions/workflows/ci.yml/badge.svg)](https://github.com/SNollken/QwenSofia/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-4.12-green)](https://hono.dev/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](LICENSE)
@@ -36,7 +36,15 @@ Este fork adiciona **painel web de contas**, **criação/autenticação automát
 
 ---
 
-## Privacidade no GitHub (fork)
+## Origem e manutenção
+
+O código original e a licença ISC permanecem atribuídos a **Pedro Farias**. A distribuição `QwenSofia` e suas adaptações são mantidas por **Sofia**. O histórico Git foi preservado para que a origem de cada alteração continue auditável.
+
+Por compatibilidade com instalações e clientes existentes, alguns identificadores internos ainda usam o nome legado, como `QWENBRIDGE_DB_PATH`, `qwenbridge.db`, chaves de cache/localStorage e o header `X-QwenBridge-Timing`.
+
+---
+
+## Privacidade no GitHub
 
 Este projeto **não deve versionar** dados de contas. O `.gitignore` cobre:
 
@@ -48,7 +56,7 @@ Este projeto **não deve versionar** dados de contas. O `.gitignore` cobre:
 | Exports | `accounts.txt`, `accounts.json`, `cookies.json` | Credenciais em texto |
 | Env local | `.env` | Senhas e tokens |
 
-Use apenas `.env.example` no repositório. Antes do primeiro push do fork:
+Use apenas `.env.example` no repositório. Antes do primeiro push do projeto:
 
 ```bash
 git status --ignored
@@ -61,7 +69,7 @@ git status --ignored
 
 ```mermaid
 flowchart TD
-    Client["Cliente OpenAI/SDK"] -->|HTTP| Proxy["QwenBridge - Hono"]
+    Client["Cliente OpenAI/SDK"] -->|HTTP| Proxy["QwenSofia - Hono"]
     Proxy --> Chat["/v1/chat/completions"]
     Proxy --> Models["/v1/models"]
     Proxy --> Upload["/v1/upload"]
@@ -81,7 +89,7 @@ flowchart TD
 
 ## Autenticação
 
-QwenBridge usa Playwright por padrão e de forma exclusiva. Cada conta configurada abre uma sessão real de browser para capturar cookies e headers anti-bot (`bx-ua`, `bx-umidtoken`, `bx-v`).
+QwenSofia usa Playwright por padrão e de forma exclusiva. Cada conta configurada abre uma sessão real de browser para capturar cookies e headers anti-bot (`bx-ua`, `bx-umidtoken`, `bx-v`).
 
 ```env
 PLAYWRIGHT_HEADLESS=true
@@ -141,8 +149,8 @@ Usa a mesma janela de contexto do modelo base.
 ### Via npm
 
 ```bash
-git clone https://github.com/johngbl/QwenBridge.git
-cd QwenBridge
+git clone https://github.com/SNollken/QwenSofia.git
+cd QwenSofia
 npm install
 npx playwright install chromium  # Se usar Playwright
 ```
@@ -157,7 +165,7 @@ docker-compose up -d
 
 ## Início rápido
 
-Crie um `.env` na raiz. O `.env.example` contém a lista completa das opções suportadas pelo fork.
+Crie um `.env` na raiz. O `.env.example` contém a lista completa das opções suportadas pelo projeto.
 
 ### Exemplo mínimo
 
@@ -328,7 +336,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 
 ## Anti-bot
 
-O QwenBridge detecta automaticamente erros de anti-bot:
+O QwenSofia detecta automaticamente erros de anti-bot:
 
 - `FAIL_SYS_USER_VALIDATE`
 - `RGV587_ERROR`
@@ -469,9 +477,9 @@ O parser suporta:
 
 ```yaml
 services:
-  qwenbridge:
+  qwensofia:
     build: .
-    container_name: qwenbridge
+    container_name: qwensofia
     ports:
       - "${PORT:-3000}:3000"
     env_file:
@@ -493,7 +501,7 @@ O container ajusta permissões no startup para `data/db` e `data/qwen_profiles`,
 ## Estrutura do projeto
 
 ```
-QwenBridge/
+QwenSofia/
 ├── src/
 │   ├── api/              # Server, models, error helpers
 │   ├── cache/            # Memory cache com Brotli

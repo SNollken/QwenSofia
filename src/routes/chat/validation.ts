@@ -1,6 +1,6 @@
 /*
  * File: validation.ts
- * Project: QwenBridge
+ * Project: QwenSofia
  * Description: Request parsing and validation for chat completions
  */
 

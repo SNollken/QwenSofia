@@ -1,9 +1,9 @@
-# Análise confirmada das rotas do QwenBridge
+# Análise confirmada das rotas do QwenSofia
 
 Data da análise: 2026-06-11
 Última atualização: 2026-06-12
 
-Este documento registra apenas pontos **confirmados e seguros** sobre as rotas do QwenBridge, com base na leitura do código local e nas documentações públicas indicadas. Ele evita afirmar compatibilidade total quando o comportamento não está implementado ou não foi comprovado.
+Este documento registra apenas pontos **confirmados e seguros** sobre as rotas do QwenSofia, com base na leitura do código local e nas documentações públicas indicadas. Ele evita afirmar compatibilidade total quando o comportamento não está implementado ou não foi comprovado.
 
 ## Fontes verificadas
 
@@ -203,7 +203,7 @@ O Chat usa estado Qwen próprio:
 
 Isso é útil operacionalmente, mas não deve ser documentado como conversa/state oficial OpenAI.
 
-#### Stop/cancelamento é específico do QwenBridge
+#### Stop/cancelamento é específico do QwenSofia
 
 `POST /v1/chat/completions/stop` existe, mas não é endpoint OpenAI padrão. Ele exige `chat_id` e `response_id` upstream e procura stream ativo em `stream-registry` antes de chamar o endpoint de stop do Qwen.
 
@@ -749,7 +749,7 @@ Casos mínimos:
 
 ## Conclusão confirmada
 
-O QwenBridge está funcional como ponte prática para:
+O QwenSofia está funcional como ponte prática para:
 
 - OpenAI-like Chat Completions;
 - OpenAI-like Responses API;

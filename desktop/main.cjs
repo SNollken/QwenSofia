@@ -13,7 +13,7 @@ async function waitForServer() {
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error("O servidor QwenBridge não iniciou a tempo.");
+  throw new Error("O servidor QwenSofia não iniciou a tempo.");
 }
 
 async function createWindow() {
@@ -25,11 +25,11 @@ async function createWindow() {
   try {
     await waitForServer();
   } catch (error) {
-    dialog.showErrorBox("QwenBridge", error.message);
+    dialog.showErrorBox("QwenSofia", error.message);
     app.quit();
     return;
   }
-  const window = new BrowserWindow({ width: 1180, height: 780, minWidth: 900, minHeight: 620, backgroundColor: "#07090d", title: "QwenBridge", webPreferences: { contextIsolation: true, sandbox: true } });
+  const window = new BrowserWindow({ width: 1180, height: 780, minWidth: 900, minHeight: 620, backgroundColor: "#07090d", title: "QwenSofia", webPreferences: { contextIsolation: true, sandbox: true } });
   await window.loadURL(`http://127.0.0.1:${port}/`);
 }
 

@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2025 johngbl
- * QwenBridge - OpenAI-compatible proxy for Qwen
+ * QwenSofia - OpenAI-compatible proxy for Qwen
  */
 
 import "dotenv/config";
@@ -993,7 +993,7 @@ async function run(): Promise<void> {
   };
   const accountContext = buildAccountBenchmarkContext(configuredAccounts);
 
-  console.log("=== QwenBridge Benchmark ===");
+  console.log("=== QwenSofia Benchmark ===");
   console.log(
     JSON.stringify(
       {

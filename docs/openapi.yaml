@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
-  title: QwenBridge API
+  title: QwenSofia API
   description: |
     OpenAI-compatible reverse proxy for Qwen models with account rotation,
     tool calling, multimodal upload, and streaming support.
   version: 1.0.0
   contact:
-    name: QwenBridge
+    name: QwenSofia
   license:
-    name: MIT
+    name: ISC
 
 servers:
   - url: http://localhost:3000
@@ -602,7 +602,7 @@ components:
         type:
           type: string
           enum: [image, video, audio, file]
-          description: Media category detected by QwenBridge
+          description: Media category detected by QwenSofia
 
     ModelList:
       type: object

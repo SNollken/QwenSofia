@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2025 johngbl
- * QwenBridge - OpenAI-compatible proxy for Qwen
+ * QwenSofia - OpenAI-compatible proxy for Qwen
  */
 
 export class Mutex {

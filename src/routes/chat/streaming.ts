@@ -1,6 +1,6 @@
 /*
  * File: streaming.ts
- * Project: QwenBridge
+ * Project: QwenSofia
  *
  * Upstream stream consumption: both non-streaming (JSON) and streaming (SSE)
  * response modes. Encapsulates heartbeat, abort handling, reasoning tag
@@ -53,7 +53,7 @@ import {
 } from "./helpers.ts";
 
 const INCOMPLETE_TOOL_CALL_MESSAGE =
-  "QwenBridge could not recover an incomplete tool call. Please retry the request.";
+  "QwenSofia could not recover an incomplete tool call. Please retry the request.";
 
 function createRetryableIncompleteToolCallError(): RetryableQwenStreamError {
   const error = new RetryableQwenStreamError(

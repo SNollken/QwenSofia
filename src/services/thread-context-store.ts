@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2025 johngbl
- * QwenBridge - OpenAI-compatible proxy for Qwen
+ * QwenSofia - OpenAI-compatible proxy for Qwen
  */
 
 import type { Usage } from "../utils/types.ts";
@@ -286,7 +286,7 @@ function compactContentForStorage(
   return {
     content:
       preview +
-      `\n\n[QwenBridge truncated ${content.length - maxChars} character(s) from this ${role} turn before local persistence.]`,
+      `\n\n[QwenSofia truncated ${content.length - maxChars} character(s) from this ${role} turn before local persistence.]`,
     metadata: {
       locallyTruncated: true,
       originalCharacters: content.length,

@@ -1,6 +1,6 @@
 /*
  * File: index.ts
- * Project: QwenBridge
+ * Project: QwenSofia
  *
  * Thin orchestrator for chat completions. Delegates to specialized modules:
  * - validation.ts: request parsing
