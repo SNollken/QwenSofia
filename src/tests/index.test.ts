@@ -6,6 +6,7 @@ process.env.TEST_MOCK_QWEN_AUTH = "true";
 process.env.API_KEY = "";
 
 import { app } from "../api/server.js";
+import { classifyError } from "../api/error-classifier.js";
 
 import { updateLogicalThreadState } from "../services/qwen.ts";
 import { deriveSessionId } from "../utils/session-id.ts";
@@ -13,6 +14,18 @@ import {
   clearAccountCooldown,
   getAccountCooldownInfo,
 } from "../core/account-manager.ts";
+
+test("Account capacity errors preserve their retryable 503 status", () => {
+  const error = Object.assign(
+    new Error("Account request queue timed out"),
+    { upstreamStatus: 503 },
+  );
+
+  const classified = classifyError(error);
+
+  assert.strictEqual(classified.statusCode, 503);
+  assert.strictEqual(classified.code, "service_degraded");
+});
 
 test("Health check endpoint returns 200", async () => {
   const req = new Request("http://localhost/health");

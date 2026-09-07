@@ -7,6 +7,8 @@ import {
   AuthError,
   UpstreamRateLimit,
   UpstreamError,
+  UpstreamTimeout,
+  ServiceUnavailable,
 } from "../core/errors.js";
 import {
   RetryableQwenStreamError,
@@ -37,6 +39,21 @@ export function classifyError(err: unknown): QwenBridgeError {
 
   if (err instanceof SchemaValidationError) {
     return err;
+  }
+
+  const upstreamStatus = (err as Record<string, unknown>)?.upstreamStatus;
+  if (typeof upstreamStatus === "number") {
+    const message = err instanceof Error ? err.message : String(err);
+    switch (upstreamStatus) {
+      case 429:
+        return new UpstreamRateLimit(message);
+      case 502:
+        return new UpstreamError(message);
+      case 503:
+        return new ServiceUnavailable(message);
+      case 504:
+        return new UpstreamTimeout(message);
+    }
   }
 
   if (err instanceof QwenBridgeError) {
