@@ -8,6 +8,7 @@ import {
   startServer,
   stopServer,
 } from "../api/server.ts";
+import { config } from "../core/config.ts";
 
 test("startup preserves active cooldowns and only clears expired ones", () => {
   const now = 1_000_000;
@@ -42,7 +43,7 @@ function isPortAvailable(port: number): Promise<boolean> {
 }
 
 test("server lifecycle starts and stops without accounts or HTTP fallback", async (t) => {
-  const port = 3000;
+  const port = config.server.port;
   if (!(await isPortAvailable(port))) {
     t.skip(`port ${port} is not available`);
     return;

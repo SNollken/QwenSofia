@@ -105,6 +105,29 @@ function verifyApiKey(c: Context): Response | null {
   return null;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * Falha de forma clara quando o bind é não local sem credenciais. Loopback
+ * segue permitido sem exigências; qualquer outro HOST requer API_KEY e
+ * ADMIN_TOKEN configurados.
+ */
+export function assertExposureCredentials(opts: {
+  host: string;
+  apiKey?: string;
+  adminToken?: string;
+}): void {
+  if (LOOPBACK_HOSTS.has(opts.host)) return;
+  const missing: string[] = [];
+  if (!opts.apiKey) missing.push("API_KEY");
+  if (!opts.adminToken) missing.push("ADMIN_TOKEN");
+  if (missing.length > 0) {
+    throw new Error(
+      `[Server] Refusing to bind non-loopback HOST "${opts.host}" without credentials (${missing.join(", ")} unset). Set them or keep HOST on loopback.`,
+    );
+  }
+}
+
 app.use("/v1/*", async (c, next) => {
   const error = verifyApiKey(c);
   if (error) return error;
@@ -123,11 +146,42 @@ app.route("", anthropicApp);
 // OpenAI Responses API compatible routes
 app.route("", responsesApp);
 
-// Local management application. Set ADMIN_TOKEN to require X-Admin-Token on
-// programmatic admin calls when exposing the proxy beyond localhost.
+// Local management application. ADMIN_TOKEN é obrigatório: sem ele, toda rota
+// administrativa recusa acesso. Com ele configurado, o header X-Admin-Token
+// deve coincidir (comparação em tempo constante). Requisições por cliente são
+// limitadas para conter força bruta e abuso das operações caras.
+const ADMIN_RATE_WINDOW_MS = 60_000;
+const ADMIN_RATE_MAX_REQUESTS = 60;
+const adminRequestTimestamps = new Map<string, number[]>();
+
+function isAdminRateLimited(clientIp: string): boolean {
+  const now = Date.now();
+  const recent = (adminRequestTimestamps.get(clientIp) ?? []).filter(
+    (at) => now - at < ADMIN_RATE_WINDOW_MS,
+  );
+  recent.push(now);
+  adminRequestTimestamps.set(clientIp, recent);
+  return recent.length > ADMIN_RATE_MAX_REQUESTS;
+}
+
 app.use("/api/admin/*", async (c, next) => {
+  const clientIp =
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  if (isAdminRateLimited(clientIp)) {
+    return c.json(
+      { error: "Muitas requisições administrativas; tente novamente em instantes" },
+      429,
+    );
+  }
   const expected = process.env.ADMIN_TOKEN;
-  if (expected && c.req.header("X-Admin-Token") !== expected) {
+  if (!expected) {
+    return c.json(
+      { error: "Administração desabilitada: configure ADMIN_TOKEN para habilitar" },
+      503,
+    );
+  }
+  const provided = c.req.header("X-Admin-Token");
+  if (!provided || !constantTimeStringEqual(provided, expected)) {
     return c.json({ error: "Token administrativo inválido" }, 401);
   }
   await next();
@@ -432,9 +486,11 @@ export async function startServer(options?: {
     cache = new MemoryCache();
     await cache.connect();
 
-    if (!config.apiKey && config.server.host === "0.0.0.0") {
-      console.warn("⚠️  [Server] API is unauthenticated on 0.0.0.0");
-    }
+    assertExposureCredentials({
+      host: config.server.host,
+      apiKey: process.env.API_KEY || config.apiKey,
+      adminToken: process.env.ADMIN_TOKEN,
+    });
 
     const { loadAccounts, getAccountCredentials } =
       await import("../core/accounts.ts");

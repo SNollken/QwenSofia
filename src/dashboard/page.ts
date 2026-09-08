@@ -127,7 +127,7 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
     <div class="fields">
       <label>Base URL<input id="baseUrl" readonly></label>
       <label>API key<input value="Use o valor de API_KEY do seu .env" readonly></label>
-      <label>Token administrativo opcional<input id="adminToken" type="password" placeholder="Valor de ADMIN_TOKEN"></label>
+      <label>Token administrativo (ADMIN_TOKEN)<input id="adminToken" type="password" placeholder="Valor de ADMIN_TOKEN"></label>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn secondary" id="saveTokenBtn">Salvar token</button>

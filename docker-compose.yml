@@ -3,9 +3,16 @@ services:
     build: .
     container_name: qwensofia
     ports:
-      - "${PORT:-3000}:3000"
+      # Expõe apenas no loopback do host; o bind público fica dentro do
+      # container (HOST=0.0.0.0 abaixo), exigido pelo mapeamento de porta.
+      - "127.0.0.1:${PORT:-3000}:3000"
     env_file:
       - .env
+    environment:
+      # Dentro do container o app precisa escutar em todas as interfaces para
+      # o mapeamento funcionar; o guard de startup exige API_KEY + ADMIN_TOKEN
+      # quando HOST não é loopback.
+      - HOST=0.0.0.0
     volumes:
       - ./data:/app/data
     restart: unless-stopped

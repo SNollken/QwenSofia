@@ -1,4 +1,7 @@
 process.env.API_KEY = "";
+// Porta fixa de teste: evita colisao com o servico em producao
+// (dotenv nao sobrescreve variaveis ja definidas).
+process.env.PORT = "3999";
 process.env.QWEN_ACCOUNTS = "";
 process.env.QWENBRIDGE_DB_PATH = "";
 process.env.NODE_ENV = "test";
