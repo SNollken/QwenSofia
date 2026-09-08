@@ -13,6 +13,18 @@ import { ValidationError, ServiceUnavailable } from "../core/errors.js";
 import { sendOpenAIError } from "../api/error-helpers.js";
 import { buildQwenRequestHeaders } from "../services/qwen-headers.ts";
 import { config } from "../core/config.ts";
+import {
+  UnsafeRemoteMediaError,
+  assertSafeMediaUrl,
+} from "../core/url-safety.ts";
+
+// Limites do download de mídia remota (QP-02).
+const REMOTE_MEDIA_TIMEOUT_MS = Number(
+  process.env.REMOTE_MEDIA_TIMEOUT_MS || 30_000,
+);
+const REMOTE_MEDIA_MAX_REDIRECTS = Number(
+  process.env.REMOTE_MEDIA_MAX_REDIRECTS || 5,
+);
 
 interface STSResponse {
   success: boolean;
@@ -277,17 +289,107 @@ function getFilenameFromUrl(url: string, mime?: string): string {
   return filename || "file.bin";
 }
 
+/**
+ * Fetch com controle de redirects: cada salto é revalidado (esquema + DNS)
+ * antes de seguir. Nenhum salto cai em destino privado/loopback.
+ * fetchFn é injetável para testes.
+ */
+export async function fetchRemoteMediaSafe(
+  startUrl: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<Response> {
+  let currentUrl = await assertSafeMediaUrl(startUrl);
+  for (let hop = 0; ; hop++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REMOTE_MEDIA_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetchFn(currentUrl.toString(), {
+        headers: {
+          "User-Agent": config.auth.userAgent,
+          Accept: "image/*,*/*;q=0.8",
+        },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        throw new Error(
+          `Remote media download timed out after ${REMOTE_MEDIA_TIMEOUT_MS}ms`,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new UnsafeRemoteMediaError("redirect sem header location");
+      }
+      if (hop >= REMOTE_MEDIA_MAX_REDIRECTS) {
+        throw new UnsafeRemoteMediaError(
+          `excedido o máximo de ${REMOTE_MEDIA_MAX_REDIRECTS} redirects`,
+        );
+      }
+      currentUrl = await assertSafeMediaUrl(
+        new URL(location, currentUrl).toString(),
+      );
+      continue;
+    }
+    return response;
+  }
+}
+
+/**
+ * Lê o corpo em stream com teto de bytes — nunca materializa o corpo inteiro
+ * antes de checar o tamanho (inclusive sem Content-Length).
+ */
+export async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<Buffer> {
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > maxBytes) {
+    throw new Error(`Remote media too large: ${contentLength}`);
+  }
+  if (!response.body) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote media too large: ${buffer.length}`);
+    }
+    return buffer;
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new Error(`Remote media too large: >${maxBytes} bytes`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // lock já liberado se o stream foi cancelado
+    }
+  }
+  return Buffer.concat(chunks);
+}
+
 async function downloadRemoteMedia(url: string): Promise<{
   buffer: Buffer;
   filename: string;
   mime: string;
 }> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": config.auth.userAgent,
-      Accept: "image/*,*/*;q=0.8",
-    },
-  });
+  const response = await fetchRemoteMediaSafe(url);
   if (!response.ok) {
     throw new Error(`Remote media download failed: ${response.status}`);
   }
@@ -306,11 +408,7 @@ async function downloadRemoteMedia(url: string): Promise<{
     );
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const maxSize = getMaxUploadSize(detectedMime);
-  if (buffer.length > maxSize) {
-    throw new Error(`Remote media too large: ${buffer.length}`);
-  }
+  const buffer = await readBodyCapped(response, getMaxUploadSize(detectedMime));
 
   return {
     buffer,
@@ -594,6 +692,11 @@ export async function processImagesForQwen(
           fileUrl = await uploadToOSS(remoteMedia.buffer, stsData, filename);
           fileId = stsData.file_id;
         } catch (err: any) {
+          if (err instanceof UnsafeRemoteMediaError) {
+            throw new ValidationError(
+              `Remote media URL rejected: ${err.message}`,
+            );
+          }
           console.warn(
             `[Upload] Failed to re-upload remote media, falling back to source URL: ${err.message}`,
           );
