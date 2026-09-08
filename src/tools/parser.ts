@@ -190,7 +190,7 @@ function findNextToolOpenTagOutsideMarkdownCode(
       const match = buffer
         .substring(i)
         .match(
-          /^(?:<tool>|<tool_calls>|<tool_calling>|<tool_caller>|<tool_call(?:[ \t]+[^>\r\n]*|[-_~!:|="][^>\r\n]*)?(?:>|\r?\n))/i,
+          /^(?:<tool>|<tool_calls>|<tool_calling>|<tool_caller>|<invoke(?:[ \t]+[^>\r\n]*)?>|<tool_call(?:[ \t]+[^>\r\n]*|[-_~!:|="][^>\r\n]*)?(?:>|\r?\n))/i,
         );
       if (match) {
         return { index: i, openTag: match[0] };
@@ -360,6 +360,7 @@ function getToolCloseTag(openTag: string): string {
     return TOOL_CALLING_END;
   }
   if (normalizedOpenTag === TOOL_CALLER_START) return TOOL_CALLER_END;
+  if (/^<invoke(?:[ \t]|>)/i.test(openTag)) return "</invoke>";
   const namedMatch = openTag.match(/^<tool_call_([a-z0-9_-]+)>$/i);
   return namedMatch ? `</tool_call_${namedMatch[1]}>` : TOOL_END;
 }
@@ -459,6 +460,7 @@ function findPartialToolOpenIndexOutsideMarkdownCode(
   const lowerToolCallPrefix = "<tool_call";
   const lowerToolCallingStart = TOOL_CALLING_START.toLowerCase();
   const lowerToolCallerStart = TOOL_CALLER_START.toLowerCase();
+  const lowerInvokeStart = "<invoke";
   const lowerCorruptOpenStart = "<tool_call<tool_call";
   const lowerCorruptCloseStart = "</tool_call<tool_call";
   const lowerOrphanInvocationClosePrefix = "</tool_call_invocation";
@@ -513,6 +515,18 @@ function findPartialToolOpenIndexOutsideMarkdownCode(
       }
       if (lowerToolCallerStart.startsWith(tailLower)) {
         return i;
+      }
+      if (lowerInvokeStart.startsWith(tailLower)) {
+        return i;
+      }
+      if (tailLower.startsWith(lowerInvokeStart)) {
+        const suffix = tailLower.substring(lowerInvokeStart.length);
+        if (
+          suffix.length === 0 ||
+          (/^[ \t]/.test(suffix) && !suffix.includes(">"))
+        ) {
+          return i;
+        }
       }
       if ("<tool>".startsWith(tailLower) || "<tool_calls>".startsWith(tailLower)) {
         return i;
@@ -720,7 +734,7 @@ function coerceParameterValue(rawValue: string): unknown {
 function extractToolName(openTag: string, block: string): string {
   const combined = `${openTag}\n${block}`;
   const attrMatch = combined.match(
-    /<tool_call\b[^>]*\bname\s*=\s*["']([^"']+)["']/i,
+    /<(?:tool_call|invoke)\b[^>]*\bname\s*=\s*["']([^"']+)["']/i,
   );
   if (attrMatch) return attrMatch[1];
 

@@ -77,6 +77,30 @@ test("named XML groups preserve separate calls instead of merging parameters", (
   assert.strictEqual(parser.flush().text, "");
 });
 
+test("StreamingToolParser: recovers invoke name envelopes across chunks", () => {
+  const output = '<invoke name="terminal">{"command":"echo invoke"}</invoke>';
+  for (let split = 0; split <= output.length; split++) {
+    const parser = new StreamingToolParser(TERMINAL_TOOLS);
+    const first = parser.feed(output.slice(0, split));
+    const second = parser.feed(output.slice(split));
+    const tail = parser.flush();
+    const calls = [...first.toolCalls, ...second.toolCalls, ...tail.toolCalls];
+    assert.strictEqual(calls.length, 1, "split " + split);
+    assert.strictEqual(calls[0].name, "terminal");
+    assert.deepStrictEqual(calls[0].arguments, { command: "echo invoke" });
+    assert.strictEqual(first.text + second.text + tail.text, "");
+  }
+});
+
+test("StreamingToolParser: marks an incomplete invoke opener as truncated", () => {
+  const parser = new StreamingToolParser(TERMINAL_TOOLS);
+  const result = parser.feed('<invoke name="terminal">');
+  const flushed = parser.flush();
+  assert.strictEqual(result.text + flushed.text, "");
+  assert.strictEqual(result.toolCalls.length + flushed.toolCalls.length, 0);
+  assert.strictEqual(flushed.truncatedToolCall, true);
+});
+
 test("named XML rejects incomplete, duplicate, unknown and unlabeled parameters", () => {
   for (const body of [
     'echo TEST</parameter_name>',
