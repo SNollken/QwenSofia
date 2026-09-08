@@ -32,7 +32,7 @@ function parseEnvAccounts(): QwenAccount[] {
       const colonIdx = trimmed.indexOf(":");
       if (colonIdx === -1) {
         console.warn(
-          `[Accounts] Invalid QWEN_ACCOUNTS entry at index ${index}: "${trimmed}"`,
+          `[Accounts] Invalid QWEN_ACCOUNTS entry at index ${index}: missing ":" separator`,
         );
         return null;
       }
@@ -40,7 +40,7 @@ function parseEnvAccounts(): QwenAccount[] {
       const password = trimmed.substring(colonIdx + 1);
       if (!email || !password) {
         console.warn(
-          `[Accounts] Invalid QWEN_ACCOUNTS entry at index ${index}: "${trimmed}"`,
+          `[Accounts] Invalid QWEN_ACCOUNTS entry at index ${index}: empty ${email ? "password" : "email"}`,
         );
         return null;
       }
