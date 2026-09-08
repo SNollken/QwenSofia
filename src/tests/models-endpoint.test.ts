@@ -56,6 +56,16 @@ test("models endpoint returns ETag and supports 304", async () => {
         .every((model: any) => model.owned_by === "QwenSofia"),
       "all public model variants should use the QwenSofia provider name",
     );
+    const ids = body.data.map((model: any) => model.id);
+    assert.equal(new Set(ids).size, ids.length, "model IDs should be unique");
+    assert.ok(
+      !ids.some((id: string) => id.includes("-no-thinking-no-thinking")),
+      "nested no-thinking variants should not be listed",
+    );
+    assert.ok(
+      !ids.some((id: string) => id.endsWith("-thinking") && !id.endsWith("-no-thinking")),
+      "redundant thinking variants should not be listed",
+    );
 
     const second = await app.fetch(
       new Request("http://localhost/v1/models", {
@@ -85,6 +95,11 @@ test("models endpoint returns a single model and 404 for missing model", async (
     assert.equal(missing.status, 404);
     const error = (await missing.json()) as any;
     assert.equal(error.error.code, "resource_not_found");
+
+    const nestedVariant = await app.fetch(
+      new Request("http://localhost/v1/models/qwen-test-model-no-thinking-no-thinking"),
+    );
+    assert.equal(nestedVariant.status, 404);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -9,6 +9,25 @@ import { syncModelContextWindows } from "../core/model-registry.ts";
 
 const app = new Hono();
 
+function buildPublicModelCatalog<T extends { id: string }>(models: T[]): T[] {
+  const catalog = new Map<string, T>();
+
+  for (const model of models) {
+    if (model.id.endsWith("-no-thinking") || model.id.endsWith("-thinking")) {
+      continue;
+    }
+
+    catalog.set(model.id, model);
+    catalog.set(`${model.id}-no-thinking`, {
+      ...model,
+      id: `${model.id}-no-thinking`,
+      object: "model",
+    });
+  }
+
+  return [...catalog.values()];
+}
+
 function getPreferredModelsAccountId(): string | undefined {
   try {
     const accounts = loadAccounts();
@@ -24,7 +43,8 @@ function getPreferredModelsAccountId(): string | undefined {
 app.get("/v1/models", async (c) => {
   try {
     const models = await fetchQwenModels(getPreferredModelsAccountId());
-    const etag = `"${createHash("md5").update(JSON.stringify(models)).digest("hex")}"`;
+    const allModels = buildPublicModelCatalog(models);
+    const etag = `"${createHash("md5").update(JSON.stringify(allModels)).digest("hex")}"`;
 
     if (c.req.header("if-none-match") === etag) {
       return c.body(null, 304);
@@ -33,22 +53,7 @@ app.get("/v1/models", async (c) => {
     c.header("Cache-Control", "public, max-age=3600");
     c.header("ETag", etag);
 
-    syncModelContextWindows(models);
-
-    // Generate variants with -no-thinking and -thinking suffixes (upstream: a63f054)
-    const allModels = [
-      ...models,
-      ...models.map((m) => ({
-        ...m,
-        id: `${m.id}-no-thinking`,
-        object: "model",
-      })),
-      ...models.map((m) => ({
-        ...m,
-        id: `${m.id}-thinking`,
-        object: "model",
-      })),
-    ];
+    syncModelContextWindows(allModels);
 
     return c.json({
       object: "list",
@@ -66,8 +71,10 @@ app.get("/v1/models/:model", async (c) => {
     const models = await fetchQwenModels(getPreferredModelsAccountId());
     syncModelContextWindows(models);
 
+    const publicModels = buildPublicModelCatalog(models);
+
     // Check for exact match first
-    let model = models.find((entry) => entry.id === modelId);
+    let model = publicModels.find((entry) => entry.id === modelId);
 
     // If not found, check if it's a -no-thinking or -thinking variant (upstream: a63f054)
     if (!model) {
@@ -75,12 +82,11 @@ app.get("/v1/models/:model", async (c) => {
       const isThinkingVariant = modelId.endsWith("-thinking");
 
       if (isNoThinkingVariant || isThinkingVariant) {
-        const baseId = isNoThinkingVariant
-          ? modelId.replace("-no-thinking", "")
-          : modelId.replace("-thinking", "");
-        const baseModel = models.find((entry) => entry.id === baseId);
+        const suffix = isNoThinkingVariant ? "-no-thinking" : "-thinking";
+        const baseId = modelId.slice(0, -suffix.length);
+        const baseModel = publicModels.find((entry) => entry.id === baseId);
 
-        if (baseModel) {
+        if (baseModel && !baseId.endsWith("-no-thinking") && !baseId.endsWith("-thinking")) {
           model = {
             ...baseModel,
             id: modelId,
