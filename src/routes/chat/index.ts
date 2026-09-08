@@ -376,11 +376,10 @@ export async function chatCompletions(c: Context) {
             await finalizeThreadContextRolloverSuccess(activeRolloverPlan);
           }
 
-          // Background summaries disabled — only summarize at rollover limit
-          // enqueueThreadContextSummary(
-          //   savedSession.sessionId,
-          //   "assistant_complete",
-          // );
+          enqueueThreadContextSummary(
+            savedSession.sessionId,
+            "assistant_complete",
+          );
         }
       : isInternalSummarizationRequest
         ? async (event: AssistantCompleteEvent) => {

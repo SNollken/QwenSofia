@@ -41,7 +41,7 @@ const envSchema = z
     CACHE_COMPRESSION_THRESHOLD: z.string().default("1024"),
     CACHE_COMPRESSION_LEVEL: z.string().default("6"),
     CONTEXT_SUMMARIZATION_ENABLED: z.string().default("true"),
-    CONTEXT_SUMMARIZATION_MODEL: z.string().default("qwen3.5-flash"),
+    CONTEXT_SUMMARIZATION_MODEL: z.string().default("qwen3.7-plus-no-thinking"),
     CONTEXT_SUMMARIZATION_TIMEOUT: z.string().default("15000"),
     CONTEXT_PERSISTENCE_ENABLED: z.string().default("true"),
     CONTEXT_ROLLOVER_ENABLED: z.string().default("true"),

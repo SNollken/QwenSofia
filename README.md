@@ -321,7 +321,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | Variável | Default | Descrição |
 |---|---|---|
 | `CONTEXT_SUMMARIZATION_ENABLED` | `true` | Sumarização do contexto thread-native. |
-| `CONTEXT_SUMMARIZATION_MODEL` | `qwen3.5-flash` | Modelo para sumarização. |
+| `CONTEXT_SUMMARIZATION_MODEL` | `qwen3.7-plus-no-thinking` | Modelo para sumarização. |
 
 ### Observabilidade
 

@@ -13,6 +13,7 @@ import {
 import { enqueueThreadContextSummary } from "./thread-context-jobs.ts";
 import { recoverThreadContextFromQwenHistory } from "./thread-context-recovery.ts";
 import {
+  createLocalThreadContextSummary,
   ensureThreadContextSummary,
   formatThreadContextRecentTurns,
 } from "./thread-context-summarizer.ts";
@@ -144,12 +145,18 @@ export async function prepareThreadContextRollover(
   }
 
   if (!summary && (decision.rolloverRequired || decision.hardLimit)) {
-    await recoverThreadContextFromQwenHistory({
+    const recoveredTurns = await recoverThreadContextFromQwenHistory({
       sessionId: input.sessionId,
       accountId: session.accountId,
       chatId: session.activeChatSessionId,
     });
-    summary = await ensureThreadContextSummary(input.sessionId);
+    if (recoveredTurns > 0) {
+      summary = await ensureThreadContextSummary(input.sessionId);
+    }
+  }
+
+  if (!summary && (decision.rolloverRequired || decision.hardLimit)) {
+    summary = createLocalThreadContextSummary(input.sessionId);
   }
 
   if (!summary) {
