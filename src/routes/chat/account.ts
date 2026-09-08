@@ -16,6 +16,7 @@ import type { TokenEstimationContext } from "../../services/token-estimation-met
 import { isAuthMockEnabled } from "../../services/auth-playwright.ts";
 import {
   getActivePlaywrightAccountIds,
+  getBusyPlaywrightAccountIds,
   refreshHeaders,
 } from "../../services/playwright.ts";
 import { Mutex } from "../../core/mutex.ts";
@@ -134,6 +135,7 @@ export function selectWarmAccount<T extends { id: string }>(
   accounts: T[],
   activeAccountIds: ReadonlySet<string>,
   startAccountId?: string | null,
+  busyAccountIds: ReadonlySet<string> = new Set(),
 ): T | undefined {
   if (accounts.length === 0) return undefined;
   const startIndex = Math.max(
@@ -148,6 +150,7 @@ export function selectWarmAccount<T extends { id: string }>(
     const load = getAccountRequestCount(candidate.id);
     if (
       activeAccountIds.has(candidate.id) &&
+      !busyAccountIds.has(candidate.id) &&
       !getAccountCooldownInfo(candidate.id) &&
       load < lowestLoad
     ) {
@@ -182,10 +185,12 @@ function resolveInitialAccount(preferredAccountId?: string): {
     }
 
     const activeAccountIds = new Set(getActivePlaywrightAccountIds());
+    const busyAccountIds = new Set(getBusyPlaywrightAccountIds());
     const warmAccount = selectWarmAccount(
       configuredAccounts,
       activeAccountIds,
       account?.id,
+      busyAccountIds,
     );
     if (warmAccount) {
       return { account: warmAccount, configuredAccounts };

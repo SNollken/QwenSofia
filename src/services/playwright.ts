@@ -937,6 +937,13 @@ export function getActivePlaywrightAccountIds(): string[] {
   return Array.from(accountPages.keys());
 }
 
+export function getBusyPlaywrightAccountIds(): string[] {
+  return Array.from(accountPages.keys()).filter((accountId) => {
+    const mutex = accountMutexes.get(accountId);
+    return profileResetQueue.has(accountId) || mutex?.isIdle() === false;
+  });
+}
+
 export function getIdlePlaywrightAccountIds(idleMs: number): string[] {
   const now = Date.now();
   return Array.from(accountPages.keys()).filter((accountId) => {
