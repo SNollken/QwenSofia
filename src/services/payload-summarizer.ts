@@ -22,6 +22,9 @@ const MAX_CHUNK_CHARS = 80_000; // 80KB max per chunk text
 const MAX_SINGLE_MESSAGE_CHARS = 40_000; // 40KB max per individual message
 const TOOL_MEMORY_MAX_ITEMS = 24;
 const TOOL_MEMORY_ITEM_MAX_CHARS = 180;
+export const UPSTREAM_PROMPT_CHAR_LIMIT = 95_000;
+const LOCAL_COMPACTION_MARKER =
+  "\n\n[... older context compacted locally to avoid the Qwen anti-bot payload limit ...]\n\n";
 
 const SUMMARIZE_PROMPT = `You are a conversation summarizer. Summarize the following conversation history concisely, preserving:
 1. Key decisions and conclusions
@@ -188,6 +191,23 @@ export function truncateMessages(
     },
     ...truncatedMessages,
   ];
+}
+
+export function capPromptForUpstream(
+  prompt: string,
+  maxChars = UPSTREAM_PROMPT_CHAR_LIMIT,
+): string {
+  if (prompt.length <= maxChars) return prompt;
+
+  const contentBudget = Math.max(0, maxChars - LOCAL_COMPACTION_MARKER.length);
+  const headChars = Math.floor(contentBudget * 0.35);
+  const tailChars = contentBudget - headChars;
+
+  return (
+    prompt.slice(0, headChars) +
+    LOCAL_COMPACTION_MARKER +
+    prompt.slice(prompt.length - tailChars)
+  );
 }
 
 function messageToText(msg: { role: string; content: any }): string {
