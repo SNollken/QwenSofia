@@ -5,6 +5,7 @@ import {
   rebuildPromptWithSummary,
   truncateMessages,
   UPSTREAM_PROMPT_CHAR_LIMIT,
+  withSummarizationTimeout,
 } from "../services/payload-summarizer.ts";
 
 const LARGE_TEXT = "x".repeat(45_000);
@@ -89,4 +90,13 @@ test("payload-summarizer: caps oversized prompts while preserving instructions a
 test("payload-summarizer: leaves prompts within the upstream limit unchanged", () => {
   const prompt = "small prompt";
   assert.equal(capPromptForUpstream(prompt), prompt);
+});
+
+test("payload-summarizer: bounds a stalled summarization chunk", async () => {
+  const stalled = new Promise<string>(() => {});
+
+  await assert.rejects(
+    withSummarizationTimeout(stalled, 10),
+    /Summarization chunk timed out after 10ms/,
+  );
 });

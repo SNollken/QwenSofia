@@ -17,6 +17,7 @@ import { getAccountCooldownInfo } from "../core/account-manager.ts";
 
 const PAYLOAD_SIZE_THRESHOLD = 100_000; // 100KB - Qwen TMD triggers around this size
 const SUMMARIZATION_TIMEOUT_MS = 60_000;
+const SUMMARIZATION_CHUNK_TOTAL_TIMEOUT_MS = 180_000;
 const CHUNK_SIZE = 10; // messages per summarization chunk
 const MAX_CHUNK_CHARS = 80_000; // 80KB max per chunk text
 const MAX_SINGLE_MESSAGE_CHARS = 40_000; // 40KB max per individual message
@@ -208,6 +209,25 @@ export function capPromptForUpstream(
     LOCAL_COMPACTION_MARKER +
     prompt.slice(prompt.length - tailChars)
   );
+}
+
+export async function withSummarizationTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`Summarization chunk timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function messageToText(msg: { role: string; content: any }): string {
@@ -434,52 +454,61 @@ export async function summarizeLargePayload(
     `[Summarizer] Payload too large (${Math.round(totalChars / 1000)}KB); splitting ${oldMessages.length} messages into ${chunks.length} chunk(s) for parallel summarization`,
   );
 
-  // Summarize chunks in parallel, each on a different account
-  const chunkSummaries = await Promise.allSettled(
-    chunks.map(async (chunk, index) => {
-      const accountId = availableAccountIds[index % availableAccountIds.length];
-      let chunkText = chunk.map(messageToText).join("\n\n");
+  const summarizeChunk = async (
+    chunk: Array<{ role: string; content: any }>,
+    index: number,
+  ): Promise<string | null> => {
+    const accountId = availableAccountIds[index % availableAccountIds.length];
+    let chunkText = chunk.map(messageToText).join("\n\n");
 
-      // Truncate chunk if too large
-      if (chunkText.length > MAX_CHUNK_CHARS) {
-        chunkText = chunkText.substring(0, MAX_CHUNK_CHARS);
-      }
+    // Truncate chunk if too large
+    if (chunkText.length > MAX_CHUNK_CHARS) {
+      chunkText = chunkText.substring(0, MAX_CHUNK_CHARS);
+    }
 
-      let chatId: string | null = null;
-      try {
-        const { headers } = await getQwenHeaders(false, accountId);
-        const modelClean = model.replace("-no-thinking", "");
+    let chatId: string | null = null;
+    try {
+      const { headers } = await getQwenHeaders(false, accountId);
+      const modelClean = model.replace("-no-thinking", "");
 
-        chatId = await createTempChat(headers, modelClean);
-        logger.info(
-          `[Summarizer] Chunk ${index + 1}/${chunks.length}: chat ${chatId.substring(0, 8)} on ${accountId.substring(0, 8)}`,
-        );
+      chatId = await createTempChat(headers, modelClean);
+      logger.info(
+        `[Summarizer] Chunk ${index + 1}/${chunks.length}: chat ${chatId.substring(0, 8)} on ${accountId.substring(0, 8)}`,
+      );
 
-        const summary = await sendSummarizationRequest(
-          headers,
-          chatId,
-          modelClean,
-          chunkText,
-        );
+      const summary = await sendSummarizationRequest(
+        headers,
+        chatId,
+        modelClean,
+        chunkText,
+      );
 
-        if (!summary) {
-          logger.warn(`[Summarizer] Chunk ${index + 1}: empty summary`);
-          return null;
-        }
-
-        logger.info(`[Summarizer] Chunk ${index + 1}: ${summary.length} chars`);
-        return summary;
-      } catch (err) {
-        logger.error(`[Summarizer] Chunk ${index + 1} failed:`, {
-          error: (err as Error).message,
-        });
+      if (!summary) {
+        logger.warn(`[Summarizer] Chunk ${index + 1}: empty summary`);
         return null;
-      } finally {
-        if (chatId) {
-          void deleteQwenChatDirect(chatId, accountId);
-        }
       }
-    }),
+
+      logger.info(`[Summarizer] Chunk ${index + 1}: ${summary.length} chars`);
+      return summary;
+    } catch (err) {
+      logger.error(`[Summarizer] Chunk ${index + 1} failed:`, {
+        error: (err as Error).message,
+      });
+      return null;
+    } finally {
+      if (chatId) {
+        void deleteQwenChatDirect(chatId, accountId);
+      }
+    }
+  };
+
+  const chunkSummaries = await Promise.allSettled(
+    chunks.map((chunk, index) =>
+      withSummarizationTimeout(
+        summarizeChunk(chunk, index),
+        SUMMARIZATION_CHUNK_TOTAL_TIMEOUT_MS,
+      ),
+    ),
   );
 
   // Collect successful summaries
