@@ -972,13 +972,10 @@ export async function disableNativeTools(accountId?: string): Promise<void> {
   }
 }
 
-function formatPublicQwenModel(
-  model: any,
-  noThinking = false,
-): PublicQwenModel {
+function formatPublicQwenModel(model: any): PublicQwenModel {
   return {
-    id: noThinking ? `${model.id}-no-thinking` : model.id,
-    name: noThinking ? `${model.name} (No Thinking)` : model.name,
+    id: model.id,
+    name: model.name,
     object: "model",
     owned_by: PUBLIC_PROVIDER_NAME,
     created: model.info?.created_at || Date.now(),
