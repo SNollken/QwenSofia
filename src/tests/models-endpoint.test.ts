@@ -8,13 +8,15 @@ import { app } from "../api/server.ts";
 const modelsPayload = {
   data: [
     {
-      id: "qwen-test-model",
+      id: "qwen3.8-max",
       owned_by: "qwen",
       info: {
         created_at: 123,
-        meta: { max_context_length: 4096 },
+        meta: { max_context_length: 500000 },
       },
     },
+    { id: "qwen3.7-plus", owned_by: "qwen" },
+    { id: "qwen3.5-flash", owned_by: "qwen" },
   ],
 };
 
@@ -43,29 +45,8 @@ test("models endpoint returns ETag and supports 304", async () => {
 
     const body = (await first.json()) as any;
     assert.equal(body.object, "list");
-    assert.ok(body.data.some((model: any) => model.id === "qwen-test-model"));
-    assert.ok(
-      body.data.some(
-        (model: any) => model.id === "qwen-test-model-no-thinking",
-      ),
-      "synthetic no-thinking variant should be listed",
-    );
-    assert.ok(
-      body.data
-        .filter((model: any) => model.id.startsWith("qwen-test-model"))
-        .every((model: any) => model.owned_by === "QwenSofia"),
-      "all public model variants should use the QwenSofia provider name",
-    );
-    const ids = body.data.map((model: any) => model.id);
-    assert.equal(new Set(ids).size, ids.length, "model IDs should be unique");
-    assert.ok(
-      !ids.some((id: string) => id.includes("-no-thinking-no-thinking")),
-      "nested no-thinking variants should not be listed",
-    );
-    assert.ok(
-      !ids.some((id: string) => id.endsWith("-thinking") && !id.endsWith("-no-thinking")),
-      "redundant thinking variants should not be listed",
-    );
+    assert.deepEqual(body.data.map((model: any) => model.id), ["qwen3.8-max"]);
+    assert.equal(body.data[0].owned_by, "QwenSofia");
 
     const second = await app.fetch(
       new Request("http://localhost/v1/models", {
@@ -82,11 +63,11 @@ test("models endpoint returns a single model and 404 for missing model", async (
   const originalFetch = installModelsFetchMock();
   try {
     const found = await app.fetch(
-      new Request("http://localhost/v1/models/qwen-test-model"),
+      new Request("http://localhost/v1/models/qwen3.8-max"),
     );
     assert.equal(found.status, 200);
     const model = (await found.json()) as any;
-    assert.equal(model.id, "qwen-test-model");
+    assert.equal(model.id, "qwen3.8-max");
     assert.equal(model.owned_by, "QwenSofia");
 
     const missing = await app.fetch(
@@ -96,10 +77,10 @@ test("models endpoint returns a single model and 404 for missing model", async (
     const error = (await missing.json()) as any;
     assert.equal(error.error.code, "resource_not_found");
 
-    const nestedVariant = await app.fetch(
-      new Request("http://localhost/v1/models/qwen-test-model-no-thinking-no-thinking"),
+    const oldModel = await app.fetch(
+      new Request("http://localhost/v1/models/qwen3.7-plus"),
     );
-    assert.equal(nestedVariant.status, 404);
+    assert.equal(oldModel.status, 404);
   } finally {
     globalThis.fetch = originalFetch;
   }

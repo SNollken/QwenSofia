@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QWEN_PRIMARY_MODEL } from "./model-registry.ts";
 
 const envSchema = z
   .object({
@@ -41,7 +42,6 @@ const envSchema = z
     CACHE_COMPRESSION_THRESHOLD: z.string().default("1024"),
     CACHE_COMPRESSION_LEVEL: z.string().default("6"),
     CONTEXT_SUMMARIZATION_ENABLED: z.string().default("true"),
-    CONTEXT_SUMMARIZATION_MODEL: z.string().default("qwen3.7-plus-no-thinking"),
     CONTEXT_SUMMARIZATION_TIMEOUT: z.string().default("15000"),
     CONTEXT_PERSISTENCE_ENABLED: z.string().default("true"),
     CONTEXT_ROLLOVER_ENABLED: z.string().default("true"),
@@ -81,7 +81,6 @@ const envSchema = z
     ANTI_BOT_MAX_DELAY_MS: z.string().default("30000"),
     QWEN_BASE_URL: z.string().default("https://chat.qwen.ai"),
     QWEN_CHAT_POOL_SIZE: z.string().default("1"),
-    QWEN_CHAT_POOL_MODELS: z.string().default("qwen3.7-plus"),
     QWEN_PERSONALIZATION_FROM_REQUEST: z.string().default("true"),
     QWEN_PERSONALIZATION_VERIFY_GET: z.string().default("true"),
     DELETE_ALL_CHATS_ON_SHUTDOWN: z.string().default("false"),
@@ -185,7 +184,7 @@ export const config = {
   context: {
     summarization: {
       enabled: env.CONTEXT_SUMMARIZATION_ENABLED !== "false",
-      model: env.CONTEXT_SUMMARIZATION_MODEL,
+      model: QWEN_PRIMARY_MODEL,
       timeout: parseInt(env.CONTEXT_SUMMARIZATION_TIMEOUT),
     },
     threadNative: {
@@ -267,9 +266,7 @@ export const config = {
   qwen: {
     baseUrl: env.QWEN_BASE_URL,
     chatPoolSize: Math.max(0, parseInt(env.QWEN_CHAT_POOL_SIZE)),
-    chatPoolModels: env.QWEN_CHAT_POOL_MODELS.split(",")
-      .map((model) => model.trim())
-      .filter(Boolean),
+    chatPoolModels: [QWEN_PRIMARY_MODEL],
     personalizationFromRequest:
       env.QWEN_PERSONALIZATION_FROM_REQUEST === "true",
     personalizationVerifyGet: env.QWEN_PERSONALIZATION_VERIFY_GET !== "false",

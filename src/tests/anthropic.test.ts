@@ -10,23 +10,15 @@ import {
   translateStreamChunk,
 } from "../routes/anthropic/translate.ts";
 import { validateAnthropicRequest } from "../routes/anthropic/validation.ts";
+import { mapResponsesModel } from "../routes/responses/adapter.ts";
 
-test("Anthropic: mapAnthropicModel maps correctly", () => {
-  // Qwen models pass through
-  assert.equal(mapAnthropicModel("qwen3.7-plus"), "qwen3.7-plus");
-  assert.equal(mapAnthropicModel("qwen3.7-max"), "qwen3.7-max");
-  assert.equal(mapAnthropicModel("qwen3.5-flash"), "qwen3.5-flash");
-
-  // Claude models map to Qwen
-  assert.equal(mapAnthropicModel("claude-sonnet-4-6"), "qwen3.7-plus");
-  assert.equal(mapAnthropicModel("claude-opus-4-6"), "qwen3.7-max");
-  assert.equal(mapAnthropicModel("claude-haiku-4-5"), "qwen3.5-flash");
-  assert.equal(mapAnthropicModel("claude-haiku-4-5-20251001"), "qwen3.5-flash");
-  assert.equal(mapAnthropicModel("claude-3-5-sonnet"), "qwen3.7-plus");
-
-  // Unknown models pass through
-  assert.equal(mapAnthropicModel("gpt-4"), "gpt-4");
-  assert.equal(mapAnthropicModel("custom-model"), "custom-model");
+test("compatibility model names always route to qwen3.8-max", () => {
+  assert.equal(mapAnthropicModel("qwen3.7-plus"), "qwen3.8-max");
+  assert.equal(mapAnthropicModel("claude-sonnet-4-6"), "qwen3.8-max");
+  assert.equal(mapAnthropicModel("custom-model"), "qwen3.8-max");
+  assert.equal(mapResponsesModel("qwen3.5-flash"), "qwen3.8-max");
+  assert.equal(mapResponsesModel("gpt-4o"), "qwen3.8-max");
+  assert.equal(mapResponsesModel("custom-model"), "qwen3.8-max");
 });
 
 test("Anthropic: translateAnthropicToOpenAI converts messages", () => {
@@ -40,7 +32,7 @@ test("Anthropic: translateAnthropicToOpenAI converts messages", () => {
   const result = translateAnthropicToOpenAI(anthropicReq);
 
   // Claude model maps to Qwen
-  assert.equal(result.model, "qwen3.7-plus");
+  assert.equal(result.model, "qwen3.8-max");
   assert.equal(result.max_tokens, 1024);
   assert.equal(result.messages.length, 2);
   assert.equal(result.messages[0].role, "system");

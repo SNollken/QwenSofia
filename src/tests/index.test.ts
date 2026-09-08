@@ -38,13 +38,18 @@ test("Health check endpoint returns 200", async () => {
   assert.ok(body.timestamp);
 });
 
-test("Models endpoint returns qwen3.6-plus and qwen3.6-plus-no-thinking", async () => {
+test("Models endpoint returns only qwen3.8-max", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input: any) => {
     const url = typeof input === "string" ? input : input.url;
     if (url.includes("/api/models")) {
       return new Response(
-        JSON.stringify({ data: [{ id: "qwen3.6-plus", owned_by: "qwen" }] }),
+        JSON.stringify({
+          data: [
+            { id: "qwen3.8-max", owned_by: "qwen" },
+            { id: "qwen3.6-plus", owned_by: "qwen" },
+          ],
+        }),
         { status: 200 },
       );
     }
@@ -60,16 +65,16 @@ test("Models endpoint returns qwen3.6-plus and qwen3.6-plus-no-thinking", async 
     const body = await res.json();
     assert.strictEqual(body.object, "list");
     assert.ok(Array.isArray(body.data));
-    assert.ok(body.data.some((m: any) => m.id === "qwen3.6-plus"));
-    assert.ok(body.data.some((m: any) => m.id === "qwen3.6-plus-no-thinking"));
+    assert.deepEqual(body.data.map((m: any) => m.id), ["qwen3.8-max"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("Chat Completions endpoint with qwen3.6-plus (thinking enabled)", async () => {
+test("Chat Completions normalizes legacy models to qwen3.8-max", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input: any) => {
+  let upstreamModel: string | undefined;
+  globalThis.fetch = async (input: any, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.url;
     if (url.includes("/api/models")) {
       return new Response(
@@ -78,6 +83,7 @@ test("Chat Completions endpoint with qwen3.6-plus (thinking enabled)", async () 
       );
     }
     if (url.includes("/api/v2/chat/completions")) {
+      upstreamModel = JSON.parse(String(init?.body)).model;
       const stream = new ReadableStream({
         start(c) {
           c.enqueue(
@@ -170,6 +176,7 @@ test("Chat Completions endpoint with qwen3.6-plus (thinking enabled)", async () 
       "Should have received streamed chunks with reasoning_content (Thinking enabled)",
     );
     assert.ok(hasContent, "Should have received streamed chunks with content");
+    assert.equal(upstreamModel, "qwen3.8-max");
   } finally {
     globalThis.fetch = originalFetch;
     await Promise.resolve();
@@ -677,7 +684,7 @@ test("Chat Completions endpoint - Non-streaming (stream: false)", async () => {
 
     const body = await res.json();
     assert.strictEqual(body.object, "chat.completion");
-    assert.strictEqual(body.model, "qwen3.6-plus");
+    assert.strictEqual(body.model, "qwen3.8-max");
     assert.ok(body.choices);
     assert.strictEqual(body.choices.length, 1);
 

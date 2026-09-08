@@ -14,6 +14,7 @@ import type { QwenAccount } from "../core/accounts.ts";
 import { config } from "../core/config.ts";
 import { maskEmail } from "../core/logger.ts";
 import { Mutex } from "../core/mutex.ts";
+import { QWEN_PRIMARY_MODEL } from "../core/model-registry.ts";
 import {
   clearFingerprintCache,
   getFingerprintProfile,
@@ -753,7 +754,7 @@ async function captureHeaders(accountId: string): Promise<void> {
                       source: "web",
                     },
                     body: JSON.stringify({
-                      model: "qwen3.5-flash",
+                      model: QWEN_PRIMARY_MODEL,
                       messages: [{ role: "user", content: "a" }],
                       stream: false,
                     }),

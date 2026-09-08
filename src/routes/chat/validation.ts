@@ -11,6 +11,7 @@ import { logger, isToolcallDebugEnabled } from "../../core/logger.js";
 import { config } from "../../core/config.ts";
 import { getBasicHeaders } from "../../services/auth-playwright.ts";
 import { buildToolInstructions } from "../../tools/instructions.ts";
+import { QWEN_PRIMARY_MODEL } from "../../core/model-registry.ts";
 
 // Tag literals split to avoid proxy parser misinterpretation
 const TOOL_CALL_OPEN = "<" + "tool_call>";
@@ -37,6 +38,7 @@ export interface ParsedRequest {
 export async function parseRequestBody(c: Context): Promise<ParsedRequest> {
   const body: OpenAIRequest = await c.req.json();
   logIncomingChatRequest(c, body);
+  body.model = QWEN_PRIMARY_MODEL;
   const isStream = body.stream ?? false;
   const isInternalSummarizationRequest =
     c.req.header("X-Internal-Summarization") === "true";
@@ -65,11 +67,8 @@ export async function parseRequestBody(c: Context): Promise<ParsedRequest> {
   const prompt = promptParts.join("");
   const currentPrompt = currentPromptParts.join("");
 
-  // Support both -no-thinking and -thinking suffixes (upstream: a63f054)
-  const modelId = body.model
-    .replace("-no-thinking", "")
-    .replace("-thinking", "");
-  const enableThinking = !body.model.endsWith("-no-thinking");
+  const modelId = QWEN_PRIMARY_MODEL;
+  const enableThinking = true;
 
   return {
     body,

@@ -20,7 +20,7 @@ test("fetchQwenModels caches results per account", async () => {
     if (url.includes("/api/models")) {
       modelRequests++;
       return new Response(
-        JSON.stringify({ data: [{ id: "qwen3.6-plus", owned_by: "qwen" }] }),
+        JSON.stringify({ data: [{ id: "qwen3.8-max", owned_by: "qwen" }] }),
         { status: 200 },
       );
     }
@@ -33,9 +33,9 @@ test("fetchQwenModels caches results per account", async () => {
     const third = await fetchQwenModels("acc-b");
 
     assert.strictEqual(modelRequests, 2);
-    assert.strictEqual(first[0]?.id, "qwen3.6-plus");
-    assert.strictEqual(second[1]?.id, "qwen3.6-plus-no-thinking");
-    assert.strictEqual(third[0]?.id, "qwen3.6-plus");
+    assert.strictEqual(first[0]?.id, "qwen3.8-max");
+    assert.strictEqual(second[0]?.id, "qwen3.8-max");
+    assert.strictEqual(third[0]?.id, "qwen3.8-max");
   } finally {
     globalThis.fetch = originalFetch;
   }

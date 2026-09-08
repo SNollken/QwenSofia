@@ -38,11 +38,13 @@ test("config exposes only Playwright/thread-native current auth and context sett
   assert.equal("mode" in config.context, false);
 
   assert.equal(typeof config.context.summarization.enabled, "boolean");
+  assert.equal(config.context.summarization.model, "qwen3.8-max");
   assert.equal(
     typeof config.context.threadNative.persistenceEnabled,
     "boolean",
   );
   assert.equal(typeof config.qwen.personalizationFromRequest, "boolean");
+  assert.deepEqual(config.qwen.chatPoolModels, ["qwen3.8-max"]);
   assert.equal(typeof config.playwright.initBatchSize, "number");
   assert.equal(typeof config.playwright.contextCloseTimeoutMs, "number");
   assert.equal(typeof config.playwright.idleContextTtlMs, "number");
