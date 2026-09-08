@@ -201,16 +201,11 @@ export async function chatCompletions(c: Context) {
     }
     mark("thread", stepStartedAt);
 
-    if (
-      !isInternalSummarizationRequest &&
-      finalPrompt.length > UPSTREAM_PROMPT_CHAR_LIMIT
-    ) {
+    if (finalPrompt.length > UPSTREAM_PROMPT_CHAR_LIMIT) {
       stepStartedAt = Date.now();
-      const reducedPrompt = await reducePromptForRetry(
-        messages,
-        systemPrompt,
-        body.model,
-      );
+      const reducedPrompt = isInternalSummarizationRequest
+        ? capPromptForUpstream(finalPrompt)
+        : await reducePromptForRetry(messages, systemPrompt, body.model);
       requestSignal.throwIfAborted();
       if (reducedPrompt && reducedPrompt.length < finalPrompt.length) {
         console.warn(
