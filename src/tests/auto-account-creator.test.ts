@@ -3,6 +3,7 @@ import assert from "node:assert";
 import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
 import {
+  acceptRegistrationTerms,
   clickByText,
   openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
@@ -133,6 +134,34 @@ test("AutoCreator: accepts the Qwen role checkbox used by the signup form", asyn
       "true",
     );
     assert.equal(await page.locator('button[type="submit"]').isDisabled(), false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: accepts the Qwen role checkbox while it remains visually unstable", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <style>
+        @keyframes drift { from { transform: translateX(0); } to { transform: translateX(4px); } }
+        [role="checkbox"] { display: inline-block; width: 20px; height: 20px; animation: drift 80ms linear infinite alternate; }
+      </style>
+      <span role="checkbox" aria-checked="false" class="qwenchat-auth-pc-register-policy-checkbox"></span>
+      <script>
+        document.querySelector('[role="checkbox"]').addEventListener('click', (event) => {
+          event.currentTarget.setAttribute('aria-checked', 'true');
+        });
+      </script>
+    `);
+
+    await acceptRegistrationTerms(page);
+
+    assert.equal(
+      await page.locator('[role="checkbox"]').getAttribute("aria-checked"),
+      "true",
+    );
   } finally {
     await browser.close();
   }

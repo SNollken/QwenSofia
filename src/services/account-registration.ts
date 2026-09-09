@@ -579,7 +579,11 @@ export async function acceptRegistrationTerms(page: Page): Promise<void> {
         : await checkbox.isChecked().catch(() => false);
 
     if (!checked) {
-      await checkbox.click({ timeout: 5_000 });
+      if (role === "checkbox") {
+        await checkbox.click({ timeout: 5_000, force: true });
+      } else {
+        await checkbox.check({ timeout: 5_000, force: true });
+      }
     }
 
     const accepted =
