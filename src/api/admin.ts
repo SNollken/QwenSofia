@@ -12,7 +12,6 @@ import { config } from "../core/config.ts";
 import {
   accountHasCapturedHeaders,
   closePlaywrightForAccount,
-  ensureAccountHeaders,
   getActivePlaywrightAccountIds,
   getPlaywrightStatus,
   initPlaywrightForAccount,
@@ -115,10 +114,7 @@ adminApp.post("/api/admin/accounts/:id/authenticate", async (c) => {
   if (!account) return c.json({ error: "Conta não encontrada" }, 404);
   await closePlaywrightForAccount(account.id).catch(() => {});
   await initPlaywrightForAccount(account, config.playwright.headless);
-  let hasHeaders = accountHasCapturedHeaders(account.id);
-  if (!hasHeaders) {
-    hasHeaders = await ensureAccountHeaders(account.id, true);
-  }
+  const hasHeaders = accountHasCapturedHeaders(account.id);
   return c.json({ ok: true, authenticated: true, ready: true, hasHeaders });
 });
 
