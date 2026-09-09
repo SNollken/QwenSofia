@@ -84,6 +84,20 @@ interface AccountHeaderCache {
   refreshInProgress: boolean;
 }
 
+export function capturedQwenHeaders(
+  requestHeaders: Record<string, string>,
+): Record<string, string> | null {
+  if (!requestHeaders["bx-ua"]?.trim()) return null;
+
+  return {
+    cookie: requestHeaders["cookie"] || "",
+    "bx-ua": requestHeaders["bx-ua"],
+    "bx-umidtoken": requestHeaders["bx-umidtoken"] || "",
+    "bx-v": requestHeaders["bx-v"] || "2.5.36",
+    "user-agent": requestHeaders["user-agent"] || "",
+  };
+}
+
 const headerCaches = new Map<string, AccountHeaderCache>();
 const COOKIE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const cookieCaches = new Map<string, { cookie: string; timestamp: number }>();
@@ -472,6 +486,11 @@ export async function initPlaywrightForAccount(
 
       // Capture headers by navigating and intercepting
       await captureHeaders(account.id);
+      if (!accountHasCapturedHeaders(account.id)) {
+        throw new Error(
+          `Headers bx-ua were not captured for ${maskEmail(account.email)}`,
+        );
+      }
       touchAccountActivity(account.id);
     } catch (error) {
       await closePlaywrightContextBestEffort(account.id, acctContext);
@@ -672,16 +691,16 @@ async function captureHeaders(accountId: string): Promise<void> {
         await route.abort("aborted").catch(() => {});
         return;
       }
-      clearTimeout(timeout);
 
       const reqHeaders = request.headers();
-      cache.headers = {
-        cookie: reqHeaders["cookie"] || "",
-        "bx-ua": reqHeaders["bx-ua"] || "",
-        "bx-umidtoken": reqHeaders["bx-umidtoken"] || "",
-        "bx-v": reqHeaders["bx-v"] || "2.5.36",
-        "user-agent": reqHeaders["user-agent"] || "",
-      };
+      const captured = capturedQwenHeaders(reqHeaders);
+      if (!captured) {
+        await route.continue().catch(() => {});
+        return;
+      }
+
+      clearTimeout(timeout);
+      cache.headers = captured;
       touchAccountActivity(accountId);
 
       console.log(`✅ [Playwright] Headers captured for ${accountId}`);

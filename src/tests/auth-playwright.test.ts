@@ -2,6 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
+import { capturedQwenHeaders } from "../services/playwright.ts";
 
 const originalMockAuth = process.env.TEST_MOCK_QWEN_AUTH;
 const originalQwenAccounts = process.env.QWEN_ACCOUNTS;
@@ -59,6 +60,28 @@ test("auth-playwright: mock mode returns complete headers", async () => {
   assert.equal(full.headers.cookie, "token=mock");
   assert.equal(full.headers["bx-ua"], "mock-bx-ua");
   assert.equal(full.parentMessageId, null);
+});
+
+test("auth-playwright: ignores captures without bx-ua", () => {
+  assert.equal(
+    capturedQwenHeaders({ cookie: "session=valid", "user-agent": "browser" }),
+    null,
+  );
+
+  assert.deepEqual(
+    capturedQwenHeaders({
+      cookie: "session=valid",
+      "bx-ua": "captured-bx-ua",
+      "user-agent": "browser",
+    }),
+    {
+      cookie: "session=valid",
+      "bx-ua": "captured-bx-ua",
+      "bx-umidtoken": "",
+      "bx-v": "2.5.36",
+      "user-agent": "browser",
+    },
+  );
 });
 
 test("auth-playwright: requires configured account outside mock mode", async () => {
