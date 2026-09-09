@@ -102,12 +102,18 @@ export function getRegistrationJob(id: string): RegistrationJob | undefined {
   return job ? publicJob(job) : undefined;
 }
 
-async function clickByText(page: Page, texts: string[]): Promise<boolean> {
+export async function clickByText(
+  page: Page,
+  texts: string[],
+): Promise<boolean> {
   for (const text of texts) {
     const loc = page.getByText(text, { exact: false }).first();
     if (await loc.isVisible().catch(() => false)) {
-      await loc.click({ timeout: 5_000 }).catch(() => {});
-      return true;
+      try {
+        await loc.click({ timeout: 5_000 });
+        return true;
+      } catch {
+      }
     }
   }
   return false;

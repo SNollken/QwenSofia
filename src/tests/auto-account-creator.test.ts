@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
-import { resubmitRegistrationAfterCaptcha } from "../services/account-registration.ts";
+import {
+  clickByText,
+  resubmitRegistrationAfterCaptcha,
+} from "../services/account-registration.ts";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
 import {
@@ -218,6 +221,18 @@ test("AutoCreator: resubmits the signup form once after captcha returns to it", 
 
     assert.equal(await resubmitRegistrationAfterCaptcha(page), true);
     assert.match(await page.locator("body").innerText(), /check your email/i);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: a timed-out text click does not claim signup navigation", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button disabled>Inscrever-se</button>');
+
+    assert.equal(await clickByText(page, ["Inscrever-se"]), false);
   } finally {
     await browser.close();
   }
