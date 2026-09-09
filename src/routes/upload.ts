@@ -266,6 +266,23 @@ function getMaxUploadSize(fileType: string): number {
   return 20 * 1024 * 1024;
 }
 
+/**
+ * Teto pré-decode para data URIs (QP-03): rejeita pelo comprimento do base64
+ * ANTES de alocar o buffer decodificado. Tamanho estimado = chars * 3/4.
+ */
+export function assertDataUriWithinLimit(
+  base64Length: number,
+  mime: string,
+): void {
+  const maxBytes = getMaxUploadSize(mime);
+  const estimatedBytes = Math.floor((base64Length * 3) / 4);
+  if (estimatedBytes > maxBytes) {
+    throw new Error(
+      `Data URI too large: ~${estimatedBytes} bytes (limit ${maxBytes})`,
+    );
+  }
+}
+
 function getFilenameFromUrl(url: string, mime?: string): string {
   let filename = "";
 
@@ -713,7 +730,11 @@ export async function processImagesForQwen(
           const detectedExt =
             getExtensionFromMime(dataMime) ||
             (isVideoData ? "mp4" : isAudioData ? "mp3" : "png");
-          const base64Data = mediaUrl.split(",")[1];
+          const base64Data = mediaUrl.split(",")[1] ?? "";
+          assertDataUriWithinLimit(
+            base64Data.length,
+            detectFileType(`file.${detectedExt}`).mime,
+          );
           const buffer = Buffer.from(base64Data, "base64");
           filename = `${isVideoData ? "video" : isAudioData ? "audio" : "file"}_${Date.now()}.${detectedExt}`;
           fileSize = buffer.length;

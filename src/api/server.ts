@@ -13,7 +13,11 @@ import { uploadFile } from "../routes/upload.js";
 import { anthropicApp } from "../routes/anthropic/index.js";
 import { responsesApp } from "../routes/responses/index.js";
 import { sendOpenAIError } from "./error-helpers.js";
-import { AuthError, NotFoundError } from "../core/errors.js";
+import {
+  AuthError,
+  NotFoundError,
+  PayloadTooLargeError,
+} from "../core/errors.js";
 import type { QwenAccount } from "../core/accounts.js";
 import { adminApp } from "./admin.js";
 import { dashboardHtml } from "../dashboard/page.js";
@@ -131,6 +135,62 @@ export function assertExposureCredentials(opts: {
 app.use("/v1/*", async (c, next) => {
   const error = verifyApiKey(c);
   if (error) return error;
+  await next();
+});
+
+// Teto de transporte para corpos de requisição (QP-03): rejeita com 413
+// ANTES de materializar o payload inteiro em memória. Content-Length acima do
+// teto cai imediato; corpos sem Content-Length são lidos em stream com teto.
+// O teto é lido por requisição (testes variam o valor sem recarregar módulo).
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 125_829_120; // 120 MiB
+
+function maxRequestBodyBytes(): number {
+  const value = Number(process.env.MAX_REQUEST_BODY_BYTES);
+  return Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_MAX_REQUEST_BODY_BYTES;
+}
+
+app.use("*", async (c, next) => {
+  if (c.req.method === "GET" || c.req.method === "HEAD") {
+    return next();
+  }
+  const maxBytes = maxRequestBodyBytes();
+  const contentLength = Number(c.req.header("content-length") || 0);
+  if (contentLength > maxBytes) {
+    return sendOpenAIError(
+      c,
+      new PayloadTooLargeError(`request body exceeds ${maxBytes} bytes`),
+    );
+  }
+
+  const body = c.req.raw.body;
+  if (body && contentLength === 0) {
+    // Sem Content-Length (chunked/stream): limita enquanto lê
+    let received = 0;
+    const capped = body.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          received += chunk.byteLength;
+          if (received > maxBytes) {
+            controller.error(
+              new PayloadTooLargeError(
+                `request body exceeds ${maxBytes} bytes`,
+              ),
+            );
+            return;
+          }
+          controller.enqueue(chunk);
+        },
+      }),
+    );
+    c.req.raw = new Request(c.req.url, {
+      method: c.req.method,
+      headers: c.req.raw.headers,
+      body: capped,
+      duplex: "half",
+    } as RequestInit);
+  }
   await next();
 });
 

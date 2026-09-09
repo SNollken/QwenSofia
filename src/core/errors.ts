@@ -6,6 +6,7 @@ export type QwenBridgeStatusCode =
   | 401
   | 403
   | 404
+  | 413
   | 429
   | 500
   | 502
@@ -61,6 +62,12 @@ export class NotFoundError extends QwenBridgeError {
   readonly statusCode = 404;
   readonly type = "not_found_error";
   readonly code = "resource_not_found";
+}
+
+export class PayloadTooLargeError extends QwenBridgeError {
+  readonly statusCode = 413;
+  readonly type = "invalid_request_error";
+  readonly code = "payload_too_large";
 }
 
 export class UpstreamRateLimit extends QwenBridgeError {
