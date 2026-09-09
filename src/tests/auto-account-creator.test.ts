@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
 import {
   clickByText,
+  openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
 } from "../services/account-registration.ts";
 import { getDatabase } from "../core/database.ts";
@@ -233,6 +234,58 @@ test("AutoCreator: a timed-out text click does not claim signup navigation", asy
     await page.setContent('<button disabled>Inscrever-se</button>');
 
     assert.equal(await clickByText(page, ["Inscrever-se"]), false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: waits for signup-only fields after a slow login transition", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route("https://chat.qwen.ai/auth**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `
+          <input name="email">
+          <input name="password" type="password">
+          <button id="signup" type="button">Inscrever-se</button>
+          <script>
+            document.querySelector('#signup').addEventListener('click', () => {
+              setTimeout(() => {
+                document.body.innerHTML = \`
+                  <input name="username">
+                  <input name="email">
+                  <input name="password" type="password">
+                  <input name="checkPassword" type="password">
+                  <span role="checkbox" class="qwenchat-auth-pc-register-policy-checkbox" aria-checked="false" style="display:inline-block;width:20px;height:20px"></span>
+                  <button type="submit" disabled>Criar Conta</button>
+                \`;
+                const checkbox = document.querySelector('[role="checkbox"]');
+                const submit = document.querySelector('button[type="submit"]');
+                checkbox.addEventListener('click', () => {
+                  checkbox.setAttribute('aria-checked', 'true');
+                  submit.disabled = false;
+                });
+                submit.addEventListener('click', () => {
+                  document.body.textContent = 'signup submitted';
+                });
+              }, 1800);
+            });
+          </script>
+        `,
+      }),
+    );
+
+    await openSignupAndFill(
+      page,
+      "new-account@example.test",
+      "safe-password-123",
+      "New Account",
+    );
+
+    assert.match(await page.locator("body").innerText(), /signup submitted/i);
   } finally {
     await browser.close();
   }
