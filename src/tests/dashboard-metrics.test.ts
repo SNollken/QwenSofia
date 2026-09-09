@@ -23,4 +23,9 @@ test("dashboard Métricas renders an in-panel health view", () => {
     /api\(["']\/health["']/,
     "metrics view must load the public health snapshot",
   );
+  assert.match(
+    dashboardHtml,
+    /metricCard\("Navegadores", runtime\.initialized/,
+    "initialized browsers must be the primary account runtime metric",
+  );
 });

@@ -180,7 +180,7 @@ function cooldownBadge(cooldown) {
 
 function accountCard(a) {
   const authBadge = a.authenticated
-    ? '<span class="badge">Autenticada</span>'
+    ? '<span class="badge">Ativa</span>'
     : '<span class="badge off">Inativa</span>';
   const authBtn = a.authenticated
     ? ""
@@ -255,7 +255,7 @@ async function loadMetrics() {
     const cache = (d.metrics && d.metrics.cache) || {};
     const cards = [
       metricCard("Estado", d.status || "desconhecido", "Saúde geral do QwenSofia"),
-      metricCard("Navegadores prontos", (runtime.withHeaders || 0) + " / " + (runtime.initialized || 0), "com bx-ua / inicializados"),
+      metricCard("Navegadores", runtime.initialized || 0, (runtime.withHeaders || 0) + " com bx-ua em cache"),
       metricCard("Requisições", concurrency.activeRequests || 0, (concurrency.queuedRequests || 0) + " aguardando na fila"),
       metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0)),
       metricCard("Cache", cache.connected ? "Conectado" : "Indisponível", (cache.keysCount || 0) + " chave(s) · " + (cache.memoryUsage || "0KB")),

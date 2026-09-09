@@ -29,6 +29,13 @@ import {
 
 export const adminApp = new Hono();
 
+export function isAccountAuthenticated(
+  accountId: string,
+  activeAccountIds: ReadonlySet<string>,
+): boolean {
+  return activeAccountIds.has(accountId);
+}
+
 function accountView() {
   const active = new Set(getActivePlaywrightAccountIds());
   const runtime = getPlaywrightStatus();
@@ -36,8 +43,7 @@ function accountView() {
   return listAccounts().map((account) => ({
     id: account.id,
     email: account.email,
-    authenticated:
-      active.has(account.id) && runtime[account.id]?.hasHeaders === true,
+    authenticated: isAccountAuthenticated(account.id, active),
     runtime: runtime[account.id] ?? null,
     cooldown: cooldowns[account.id] ?? null,
   }));
@@ -113,18 +119,7 @@ adminApp.post("/api/admin/accounts/:id/authenticate", async (c) => {
   if (!hasHeaders) {
     hasHeaders = await ensureAccountHeaders(account.id, true);
   }
-  if (!hasHeaders) {
-    return c.json(
-      {
-        ok: false,
-        authenticated: false,
-        ready: false,
-        error: "Sessão aberta, mas headers bx-ua não capturados",
-      },
-      502,
-    );
-  }
-  return c.json({ ok: true, authenticated: true, ready: true, hasHeaders: true });
+  return c.json({ ok: true, authenticated: true, ready: true, hasHeaders });
 });
 
 adminApp.post("/api/admin/registrations", async (c) => {

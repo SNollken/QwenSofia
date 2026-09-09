@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 process.env.TEST_MOCK_QWEN_AUTH = "true";
 
 import { app, assertExposureCredentials } from "../api/server.ts";
+import { isAccountAuthenticated } from "../api/admin.ts";
 import { config } from "../core/config.ts";
 
 const SAVED_ADMIN_TOKEN = process.env.ADMIN_TOKEN;
@@ -38,6 +39,12 @@ test("admin routes allow loopback access without ADMIN_TOKEN", async () => {
     setAdminToken(SAVED_ADMIN_TOKEN);
     config.server.host = SAVED_ADMIN_HOST;
   }
+});
+
+test("account status follows the active browser session, not bx-ua capture", () => {
+  const active = new Set(["active-account"]);
+  assert.equal(isAccountAuthenticated("active-account", active), true);
+  assert.equal(isAccountAuthenticated("closed-account", active), false);
 });
 
 test("admin routes require the configured ADMIN_TOKEN outside loopback", async () => {

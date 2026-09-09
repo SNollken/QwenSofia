@@ -486,11 +486,6 @@ export async function initPlaywrightForAccount(
 
       // Capture headers by navigating and intercepting
       await captureHeaders(account.id);
-      if (!accountHasCapturedHeaders(account.id)) {
-        throw new Error(
-          `Headers bx-ua were not captured for ${maskEmail(account.email)}`,
-        );
-      }
       touchAccountActivity(account.id);
     } catch (error) {
       await closePlaywrightContextBestEffort(account.id, acctContext);
