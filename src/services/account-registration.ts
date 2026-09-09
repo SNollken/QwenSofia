@@ -634,7 +634,7 @@ export async function resubmitRegistrationAfterCaptcha(
  * Login: input[name=email] type=text, input[name=password], "Inscrever-se"
  * Signup: username, email (type=text), password, checkPassword, terms checkbox, "Criar Conta"
  */
-async function openSignupAndFill(
+export async function openSignupAndFill(
   page: Page,
   email: string,
   password: string,
@@ -667,7 +667,7 @@ async function openSignupAndFill(
 
   // Wait for signup fields
   await page
-    .locator('input[name="email"], input[name="username"]')
+    .locator('input[name="username"], input[name="checkPassword"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
 
