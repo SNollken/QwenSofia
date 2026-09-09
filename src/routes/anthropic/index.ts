@@ -7,6 +7,7 @@ import {
   translateAnthropicToOpenAI,
   translateOpenAIToAnthropic,
   translateStreamChunk,
+  mapAnthropicModel,
 } from "./translate.js";
 import type { AnthropicRequest, OpenAIResponse } from "./types.js";
 
@@ -191,7 +192,7 @@ app.post("/v1/messages", async (c) => {
   }
 
   const isStream = body.stream ?? false;
-  const requestModel = body.model;
+  const requestModel = mapAnthropicModel(body.model);
 
   console.log(
     `[Anthropic] Request | ${requestModel} | ${body.messages.length} msg(s)${body.tools ? ` | ${body.tools.length} tool(s)` : ""}${isStream ? " | stream" : ""}`,

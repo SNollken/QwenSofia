@@ -49,6 +49,17 @@ test("Account Rotation: warm selection skips a full account", async () => {
   }
 });
 
+test("Account Rotation: warm selection skips a Playwright-busy account", () => {
+  const selected = selectWarmAccount(
+    [{ id: "warm-busy" }, { id: "warm-ready" }],
+    new Set(["warm-busy", "warm-ready"]),
+    "warm-busy",
+    new Set(["warm-busy"]),
+  );
+
+  assert.equal(selected?.id, "warm-ready");
+});
+
 test("Account Rotation: Round-Robin rotation cycle", async () => {
   const originalEnv = process.env.QWEN_ACCOUNTS;
   delete process.env.QWEN_ACCOUNTS;

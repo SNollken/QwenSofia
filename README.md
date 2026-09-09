@@ -105,31 +105,12 @@ npx playwright install chromium
 
 ## Modelos e contexto
 
-Os modelos e janelas de contexto são sincronizados automaticamente via `/v1/models`.
-O campo público `owned_by` usa o nome do provider `QwenSofia` para os modelos base e suas variantes.
-Valores hardcoded como fallback antes da primeira chamada à API:
+O proxy expõe somente `qwen3.8-max` via `/v1/models` e normaliza qualquer alias recebido para esse modelo.
+O campo público `owned_by` usa o nome do provider `QwenSofia`.
 
 | Modelo | Contexto | Divisor de tokens |
 |---|---|---|
-| `qwen3.7-plus` | 1.000.000 | 2.0 |
-| `qwen3.7-max` | 1.000.000 | 2.2 |
-| `qwen3.6-plus` | 1.000.000 | 2.0 |
-| `qwen3.6-plus-preview` | 1.000.000 | 2.0 |
-| `qwen3.5-plus` | 1.000.000 | 2.0 |
-| `qwen3.5-flash` | 1.000.000 | 1.8 |
-| `qwen3-coder-plus` | 1.048.576 | 2.3 |
-| `qwen3.6-max-preview` | 262.144 | 2.2 |
-| `qwen3.5-max-2026-03-08` | 262.144 | 2.2 |
-| `qwen3-vl-plus` | 262.144 | 2.1 |
-| `qwen3.5-omni-plus` | 262.144 | 1.8 |
-| `qwen3-omni-flash-2025-12-01` | 65.536 | 1.7 |
-| `qwen-plus-2025-07-28` | 131.072 | 2.0 |
-| **Fallback** | **131.072** | **2.0** |
-
-### Variantes `-no-thinking`
-
-Todos os modelos acima possuem variantes `-no-thinking` (ex: `qwen3.7-plus-no-thinking`).
-Usa a mesma janela de contexto do modelo base.
+| `qwen3.8-max` | 500.000 | 2.2 |
 
 ---
 
@@ -321,7 +302,8 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | Variável | Default | Descrição |
 |---|---|---|
 | `CONTEXT_SUMMARIZATION_ENABLED` | `true` | Sumarização do contexto thread-native. |
-| `CONTEXT_SUMMARIZATION_MODEL` | `qwen3.5-flash` | Modelo para sumarização. |
+
+A sumarização usa sempre `qwen3.8-max`.
 
 ### Observabilidade
 
@@ -408,7 +390,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: "qwen3.7-plus",
+  model: "qwen3.8-max",
   messages: [{ role: "user", content: "Hello!" }],
 });
 
@@ -426,7 +408,7 @@ const client = new Anthropic({
 });
 
 const message = await client.messages.create({
-  model: "qwen3.7-plus",
+  model: "qwen3.8-max",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hello!" }],
 });
@@ -441,7 +423,7 @@ curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sua-api-key" \
   -d '{
-    "model": "qwen3.7-plus",
+    "model": "qwen3.8-max",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
@@ -463,13 +445,7 @@ O parser suporta:
 
 | Claude Model | Qwen Model |
 |---|---|
-| `claude-opus-4-*` | `qwen3.7-max` |
-| `claude-sonnet-4-*` | `qwen3.7-plus` |
-| `claude-haiku-4-*` | `qwen3.5-flash` |
-| `claude-3-5-sonnet` | `qwen3.7-plus` |
-| `claude-3-opus` | `qwen3.7-max` |
-| `claude-3-sonnet` | `qwen3.6-plus` |
-| `claude-3-haiku` | `qwen3.5-flash` |
+| Qualquer modelo | `qwen3.8-max` |
 
 ---
 

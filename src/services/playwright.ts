@@ -14,6 +14,7 @@ import type { QwenAccount } from "../core/accounts.ts";
 import { config } from "../core/config.ts";
 import { maskEmail } from "../core/logger.ts";
 import { Mutex } from "../core/mutex.ts";
+import { QWEN_PRIMARY_MODEL } from "../core/model-registry.ts";
 import {
   clearFingerprintCache,
   getFingerprintProfile,
@@ -753,7 +754,7 @@ async function captureHeaders(accountId: string): Promise<void> {
                       source: "web",
                     },
                     body: JSON.stringify({
-                      model: "qwen3.5-flash",
+                      model: QWEN_PRIMARY_MODEL,
                       messages: [{ role: "user", content: "a" }],
                       stream: false,
                     }),
@@ -934,6 +935,13 @@ export function schedulePlaywrightProfileReset(accountId: string): void {
 
 export function getActivePlaywrightAccountIds(): string[] {
   return Array.from(accountPages.keys());
+}
+
+export function getBusyPlaywrightAccountIds(): string[] {
+  return Array.from(accountPages.keys()).filter((accountId) => {
+    const mutex = accountMutexes.get(accountId);
+    return profileResetQueue.has(accountId) || mutex?.isIdle() === false;
+  });
 }
 
 export function getIdlePlaywrightAccountIds(idleMs: number): string[] {

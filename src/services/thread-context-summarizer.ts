@@ -7,6 +7,7 @@ import { config } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
 import { summarizeMessages } from "../utils/context-summarizer.ts";
 import type { Message } from "../utils/types.ts";
+import { estimateThreadTextTokens } from "./thread-context-estimator.ts";
 import {
   getLatestThreadContextSummary,
   getRecentThreadContextTurns,
@@ -107,6 +108,118 @@ function isUsableSummary(summary: string): boolean {
   return !!trimmed && !trimmed.startsWith("[Summary unavailable");
 }
 
+function clipLocalFallbackText(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  const marker = "\n...[locally compacted]...\n";
+  if (limit <= marker.length + 2) return value.slice(0, Math.max(0, limit));
+  const available = limit - marker.length;
+  const head = Math.ceil(available * 0.6);
+  return value.slice(0, head) + marker + value.slice(-(available - head));
+}
+
+export function createLocalThreadContextSummary(
+  sessionId: string,
+): ThreadContextSummary | null {
+  const session = getThreadContextSession(sessionId);
+  if (!session) return null;
+
+  const previousSummary = getLatestThreadContextSummary(sessionId);
+  const unsummarizedTurns = getUnsummarizedThreadContextTurns(sessionId);
+  if (unsummarizedTurns.length === 0) return previousSummary;
+
+  const configuredMaxTokens = Math.max(
+    128,
+    config.context.threadNative.summaryMaxTokens,
+  );
+  const contextBoundTokens = Math.max(
+    128,
+    Math.floor(session.modelContextWindow * 0.2),
+  );
+  const maxTokens = Math.min(configuredMaxTokens, contextBoundTokens);
+  const maxChars = Math.max(512, maxTokens * 4);
+  const header =
+    "Local extractive fallback generated because the configured summary provider was unavailable.";
+  const sections: string[] = [header];
+  let remainingChars = maxChars - header.length - 2;
+
+  if (previousSummary && remainingChars > 160) {
+    const previousBudget = Math.min(
+      Math.floor(maxChars * 0.25),
+      remainingChars - 80,
+    );
+    sections.push(
+      "Previous cumulative summary:\n" +
+        clipLocalFallbackText(previousSummary.summary, previousBudget),
+    );
+    remainingChars -= sections[sections.length - 1].length + 2;
+  }
+
+  const conversationHeader = "Conversation excerpts:";
+  const availableTurnsChars = Math.max(
+    32,
+    remainingChars - conversationHeader.length - 2,
+  );
+  const maxTurnCount = Math.max(1, Math.floor(availableTurnsChars / 120));
+  const selectedTurns = unsummarizedTurns.length <= maxTurnCount
+    ? unsummarizedTurns
+    : maxTurnCount === 1
+    ? [unsummarizedTurns[unsummarizedTurns.length - 1]]
+    : [unsummarizedTurns[0], ...unsummarizedTurns.slice(-(maxTurnCount - 1))];
+  const omittedTurns = unsummarizedTurns.length - selectedTurns.length;
+  const omissionNote = omittedTurns > 0
+    ? "[" + omittedTurns + " older turn(s) omitted from the local fallback.]"
+    : "";
+  const turnBudget = Math.max(
+    32,
+    Math.floor(
+      (availableTurnsChars - omissionNote.length - 2) / selectedTurns.length,
+    ),
+  );
+  const turnLines = selectedTurns.map((turn) => {
+    const prefix = roleLabel(turn.role) + ": ";
+    return prefix +
+      clipLocalFallbackText(turn.content, Math.max(1, turnBudget - prefix.length));
+  });
+  sections.push(
+    [
+      conversationHeader,
+      ...turnLines,
+      ...(omissionNote ? [omissionNote] : []),
+    ].join("\n\n"),
+  );
+
+  const summaryText = sections.join("\n\n").slice(0, maxChars);
+  const summaryTokens = estimateThreadTextTokens(summaryText);
+  const originalTokens = unsummarizedTurns.reduce(
+    (total, turn) => total + Math.max(0, turn.contentTokens),
+    previousSummary?.summaryTokens ?? 0,
+  );
+  const summary = insertThreadContextSummary({
+    sessionId,
+    summary: summaryText,
+    summaryTokens,
+    sourceTurnStart: unsummarizedTurns[0]?.id ?? null,
+    sourceTurnEnd: unsummarizedTurns[unsummarizedTurns.length - 1]?.id ?? null,
+    model: "local-extractive-fallback",
+    compressionRatio: originalTokens / Math.max(summaryTokens, 1),
+  });
+
+  console.warn(
+    "[ThreadContext] Local fallback completed | " +
+      summary.summaryTokens +
+      " tokens",
+  );
+  logger.warn("[thread-context] local fallback summary completed", {
+    sessionId,
+    summaryId: summary.id,
+    sourceTurnStart: summary.sourceTurnStart,
+    sourceTurnEnd: summary.sourceTurnEnd,
+    omittedTurns,
+    summaryTokens: summary.summaryTokens,
+  });
+  return summary;
+}
+
 export async function runThreadContextSummary(
   sessionId: string,
 ): Promise<ThreadContextSummary | null> {
@@ -142,7 +255,7 @@ export async function runThreadContextSummary(
     const summarizeWithModel = (model: string) =>
       summarizeMessages(messages, {
         model,
-        maxSummaryTokens: 0, // no limit - let model generate as much as needed
+        maxSummaryTokens: config.context.threadNative.summaryMaxTokens,
         timeout: config.context.threadNative.summaryTimeout,
         systemPromptOverride: CONTINUATION_SUMMARY_PROMPT,
         purpose: "rollover",
@@ -151,7 +264,11 @@ export async function runThreadContextSummary(
     const primaryModel = config.context.summarization.model;
     let result = await summarizeWithModel(primaryModel);
 
-    if (!isUsableSummary(result.summary) && primaryModel !== session.model) {
+    if (
+      !isUsableSummary(result.summary) &&
+      primaryModel !== session.model &&
+      session.status !== "hard_limit"
+    ) {
       console.warn(
         `[ThreadContext] Summary retry | ${primaryModel} -> ${session.model}`,
       );

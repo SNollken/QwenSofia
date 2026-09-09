@@ -102,12 +102,18 @@ export function getRegistrationJob(id: string): RegistrationJob | undefined {
   return job ? publicJob(job) : undefined;
 }
 
-async function clickByText(page: Page, texts: string[]): Promise<boolean> {
+export async function clickByText(
+  page: Page,
+  texts: string[],
+): Promise<boolean> {
   for (const text of texts) {
     const loc = page.getByText(text, { exact: false }).first();
     if (await loc.isVisible().catch(() => false)) {
-      await loc.click({ timeout: 5_000 }).catch(() => {});
-      return true;
+      try {
+        await loc.click({ timeout: 5_000 });
+        return true;
+      } catch {
+      }
     }
   }
   return false;
@@ -597,6 +603,32 @@ export async function acceptRegistrationTerms(page: Page): Promise<void> {
   }
 }
 
+export async function resubmitRegistrationAfterCaptcha(
+  page: Page,
+): Promise<boolean> {
+  const signupForm = page
+    .locator(
+      'input[name="email"], input[name="checkPassword"], button:has-text("Criar Conta")',
+    )
+    .first();
+  if (!(await signupForm.isVisible().catch(() => false))) return false;
+
+  await acceptRegistrationTerms(page);
+  const submit = page
+    .locator(
+      'button[type="submit"], button:has-text("Criar Conta"), button:has-text("Create Account"), button:has-text("Sign up")',
+    )
+    .first();
+  await submit.waitFor({ state: "visible", timeout: 10_000 });
+  if (await submit.isDisabled().catch(() => false)) {
+    throw new Error(
+      "O formulário de inscrição continua desabilitado após o CAPTCHA.",
+    );
+  }
+  await submit.click({ timeout: 10_000 });
+  return true;
+}
+
 /**
  * Real Qwen Studio auth form (2026):
  * Login: input[name=email] type=text, input[name=password], "Inscrever-se"
@@ -1052,6 +1084,26 @@ async function runRegistration(
         page,
         job,
         Math.min(60_000, config.accountCreator.timeoutMs),
+      );
+    }
+
+    if (
+      !(await pageShowsAccessVerification(page)) &&
+      !(await detectCaptcha(page)) &&
+      !(await pageShowsActivationPending(page)) &&
+      !(await pageLooksAuthenticated(page)) &&
+      (await resubmitRegistrationAfterCaptcha(page))
+    ) {
+      setJob(
+        job,
+        "filling-form",
+        "CAPTCHA concluído, mas o formulário continuou aberto. Reenviando o cadastro uma vez…",
+      );
+      await sleep(2_000);
+      await handleCaptcha(
+        page,
+        job,
+        Math.min(180_000, config.accountCreator.timeoutMs),
       );
     }
 

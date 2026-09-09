@@ -44,6 +44,8 @@ import {
   summarizeLargePayload,
   rebuildPromptWithSummary,
   truncateMessages,
+  capPromptForUpstream,
+  UPSTREAM_PROMPT_CHAR_LIMIT,
 } from "../../services/payload-summarizer.ts";
 
 async function reducePromptForRetry(
@@ -65,7 +67,7 @@ async function reducePromptForRetry(
         console.log(
           `📝 [Chat] Reduced prompt via summarization: ${result.originalChars} → ${result.summaryChars} chars`,
         );
-        return prompt;
+        return capPromptForUpstream(prompt);
       }
     }
 
@@ -90,7 +92,7 @@ async function reducePromptForRetry(
     console.warn(
       `⚠️  [Chat] Reduced prompt via truncation: ${messages.length} messages → ${prompt.length} chars`,
     );
-    return prompt;
+    return capPromptForUpstream(prompt);
   } catch (err) {
     console.warn(
       `❌ [Chat] Failed to reduce prompt: ${(err as Error).message}`,
@@ -198,6 +200,21 @@ export async function chatCompletions(c: Context) {
       activeRolloverPlan = prepared.rollover;
     }
     mark("thread", stepStartedAt);
+
+    if (finalPrompt.length > UPSTREAM_PROMPT_CHAR_LIMIT) {
+      stepStartedAt = Date.now();
+      const reducedPrompt = isInternalSummarizationRequest
+        ? capPromptForUpstream(finalPrompt)
+        : await reducePromptForRetry(messages, systemPrompt, body.model);
+      requestSignal.throwIfAborted();
+      if (reducedPrompt && reducedPrompt.length < finalPrompt.length) {
+        console.warn(
+          `[Chat] Proactively reduced oversized prompt: ${finalPrompt.length} → ${reducedPrompt.length} chars`,
+        );
+        finalPrompt = reducedPrompt;
+      }
+      mark("payload", stepStartedAt);
+    }
 
     const files = ctx.useThreadNative ? currentFiles : allFiles;
 
@@ -376,11 +393,10 @@ export async function chatCompletions(c: Context) {
             await finalizeThreadContextRolloverSuccess(activeRolloverPlan);
           }
 
-          // Background summaries disabled — only summarize at rollover limit
-          // enqueueThreadContextSummary(
-          //   savedSession.sessionId,
-          //   "assistant_complete",
-          // );
+          enqueueThreadContextSummary(
+            savedSession.sessionId,
+            "assistant_complete",
+          );
         }
       : isInternalSummarizationRequest
         ? async (event: AssistantCompleteEvent) => {

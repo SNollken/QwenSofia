@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { chromium } from "playwright";
+import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
+import {
+  clickByText,
+  resubmitRegistrationAfterCaptcha,
+} from "../services/account-registration.ts";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
 import {
@@ -127,6 +132,107 @@ test("AutoCreator: accepts the Qwen role checkbox used by the signup form", asyn
       "true",
     );
     assert.equal(await page.locator('button[type="submit"]').isDisabled(), false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: reads cross-origin captcha images through a clean canvas", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const pixel = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+
+    await page.route("http://assets.test/pixel.png", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: pixel,
+      }),
+    );
+    await page.route("http://qwen.test/", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `
+          <style>
+            #aliyunCaptcha-img-box { position: relative; width: 200px; height: 80px; }
+            #aliyunCaptcha-img { width: 200px; height: 80px; }
+            #aliyunCaptcha-puzzle { position: absolute; left: 0; top: 0; width: 30px; height: 30px; }
+            #aliyunCaptcha-sliding-body { position: relative; width: 200px; height: 30px; }
+            #aliyunCaptcha-sliding-slider { width: 30px; height: 30px; }
+          </style>
+          <div id="aliyunCaptcha-window-float">Access Verification</div>
+          <div id="aliyunCaptcha-img-box">
+            <img id="aliyunCaptcha-img" src="http://assets.test/pixel.png">
+            <img id="aliyunCaptcha-puzzle" src="http://assets.test/pixel.png">
+          </div>
+          <div id="aliyunCaptcha-sliding-body">
+            <div id="aliyunCaptcha-sliding-slider"></div>
+          </div>
+          <script>
+            let dragging = false;
+            document.querySelector('#aliyunCaptcha-sliding-slider').addEventListener('mousedown', () => {
+              dragging = true;
+            });
+            document.addEventListener('mouseup', () => {
+              if (dragging) document.body.textContent = 'verified';
+            });
+          </script>
+        `,
+      }),
+    );
+
+    await page.goto("http://qwen.test/");
+    const statuses: string[] = [];
+    const result = await solveAliyunPuzzleCaptcha(page, {
+      maxAttempts: 1,
+      onAttempt: ({ status }) => statuses.push(status),
+    });
+
+    assert.equal(result.ok, true, JSON.stringify({ result, statuses }));
+    assert.ok(statuses.some((status) => status.startsWith("resolvendo captcha")));
+    assert.ok(statuses.every((status) => !status.includes("image-bytes")));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: resubmits the signup form once after captcha returns to it", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="email" value="new-account@example.test">
+      <div class="qwenchat-auth-pc-register-policy">
+        <span role="checkbox" aria-checked="true"></span>
+      </div>
+      <button type="submit">Criar Conta</button>
+      <script>
+        document.querySelector('button').addEventListener('click', () => {
+          document.body.textContent = 'Check your email';
+        });
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), true);
+    assert.match(await page.locator("body").innerText(), /check your email/i);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: a timed-out text click does not claim signup navigation", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button disabled>Inscrever-se</button>');
+
+    assert.equal(await clickByText(page, ["Inscrever-se"]), false);
   } finally {
     await browser.close();
   }

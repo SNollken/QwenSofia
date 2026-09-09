@@ -7,6 +7,7 @@ import {
   buildInProgressResponse,
   finalizeResponse,
   generateResponseId,
+  mapResponsesModel,
   responsesOutputToChatMessages,
 } from "./adapter.ts";
 import {
@@ -46,7 +47,7 @@ app.post("/v1/responses", async (c) => {
 
   const req = validation.data!;
   const isStream = req.stream ?? false;
-  const requestModel = req.model;
+  const requestModel = mapResponsesModel(req.model);
 
   console.log(
     `[Responses] Request | ${requestModel} | ${typeof req.input === "string" ? "string" : `${req.input.length} msg(s)`}${req.tools ? ` | ${req.tools.length} tool(s)` : ""}${isStream ? " | stream" : ""}${req.previous_response_id ? " | stateful" : ""}`,

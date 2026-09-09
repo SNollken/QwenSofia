@@ -153,8 +153,14 @@ async function analyzePuzzle(page: Page): Promise<PuzzleGeometry | null> {
         if (!resp || !resp.ok) throw new Error('fetch img failed');
         const blob = await resp.blob();
         const bmp = await createImageBitmap(blob);
-        ctx.drawImage(bmp, 0, 0, w, h);
-        return { w, h, data: ctx.getImageData(0, 0, w, h).data };
+        const cleanCanvas = document.createElement('canvas');
+        cleanCanvas.width = w;
+        cleanCanvas.height = h;
+        const cleanCtx = cleanCanvas.getContext('2d', { willReadFrequently: true });
+        if (!cleanCtx) throw new Error('no clean canvas');
+        cleanCtx.drawImage(bmp, 0, 0, w, h);
+        bmp.close();
+        return { w, h, data: cleanCtx.getImageData(0, 0, w, h).data };
       }
     };
 

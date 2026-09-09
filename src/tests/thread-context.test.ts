@@ -218,6 +218,61 @@ test("thread context rollover recovers Qwen history when summary is missing at h
   );
 });
 
+test("thread context rollover uses a local fallback when the summary provider is unavailable", async () => {
+  const sessionId = uniqueSession("thread-local-fallback");
+  config.context.threadNative.persistenceEnabled = true;
+  config.context.threadNative.rolloverEnabled = true;
+  config.context.summarization.enabled = true;
+
+  upsertThreadContextSession({
+    sessionId,
+    model: "qwen3.8-max",
+    modelContextWindow: 1_000,
+    accountId: "acc-fallback",
+    activeChatSessionId: "fallback-chat",
+    activeParentId: "fallback-parent",
+    systemPrompt: "System fallback instructions",
+  });
+  saveThreadContextCompletion({
+    sessionId,
+    model: "qwen3.8-max",
+    modelContextWindow: 1_000,
+    accountId: "acc-fallback",
+    chatSessionId: "fallback-chat",
+    responseId: "fallback-response",
+    userPrompt: "User: preserve this important request",
+    finalPrompt: "System fallback instructions\n\nUser: preserve this important request",
+    assistantContent: "Assistant completed an important step",
+    usage: { prompt_tokens: 900, completion_tokens: 50, total_tokens: 950 },
+    finishReason: "stop",
+  });
+  upsertThreadContextSession({
+    sessionId,
+    model: "qwen3.8-max",
+    modelContextWindow: 1_000,
+    estimatedThreadTokens: 950,
+  });
+
+  globalThis.fetch = (async () =>
+    new Response("provider unavailable", { status: 503 })) as typeof fetch;
+
+  const prepared = await prepareThreadContextRollover({
+    sessionId,
+    finalPrompt: "User: continue after provider failure",
+    currentPrompt: "User: continue after provider failure",
+    systemPrompt: "System fallback instructions",
+    skipRollover: false,
+  });
+
+  assert.ok(prepared.rollover);
+  assert.ok(prepared.finalPrompt.includes("Local extractive fallback"));
+  assert.ok(prepared.finalPrompt.includes("preserve this important request"));
+  assert.equal(
+    getLatestThreadContextSummary(sessionId)?.model,
+    "local-extractive-fallback",
+  );
+});
+
 test("thread context rollover prepares fresh prompt and deletes old chat after success", async () => {
   const sessionId = uniqueSession("thread-rollover");
   config.context.threadNative.persistenceEnabled = true;

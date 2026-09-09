@@ -16,7 +16,11 @@ import type {
 } from "./token-estimation-metrics.ts";
 import { getDatabase } from "../core/database.ts";
 import { markAccountRateLimited } from "../core/account-manager.ts";
-import { MAX_PAYLOAD_SIZE } from "../core/model-registry.ts";
+import {
+  MAX_PAYLOAD_SIZE,
+  QWEN_PRIMARY_CONTEXT_WINDOW,
+  QWEN_PRIMARY_MODEL,
+} from "../core/model-registry.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -968,17 +972,14 @@ export async function disableNativeTools(accountId?: string): Promise<void> {
   }
 }
 
-function formatPublicQwenModel(
-  model: any,
-  noThinking = false,
-): PublicQwenModel {
+function formatPublicQwenModel(model: any): PublicQwenModel {
   return {
-    id: noThinking ? `${model.id}-no-thinking` : model.id,
-    name: noThinking ? `${model.name} (No Thinking)` : model.name,
+    id: model.id,
+    name: model.name,
     object: "model",
     owned_by: PUBLIC_PROVIDER_NAME,
     created: model.info?.created_at || Date.now(),
-    context_window: model.info?.meta?.max_context_length,
+    context_window: QWEN_PRIMARY_CONTEXT_WINDOW,
     capabilities: model.info?.meta?.capabilities,
   };
 }
@@ -1107,10 +1108,9 @@ export async function fetchQwenModels(
 
   const json = await response.json();
   if (json.data && Array.isArray(json.data)) {
-    const models = json.data.flatMap((model: any) => [
-      formatPublicQwenModel(model),
-      formatPublicQwenModel(model, true),
-    ]);
+    const models = json.data
+      .filter((model: any) => model.id === QWEN_PRIMARY_MODEL)
+      .map((model: any) => formatPublicQwenModel(model));
 
     modelsCache.set(cacheKey, { models, fetchedAt: now });
     return models;

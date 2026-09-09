@@ -5,27 +5,16 @@ import { loadAccounts } from "../core/accounts.ts";
 import { getAccountCooldownInfo } from "../core/account-manager.ts";
 import { NotFoundError } from "../core/errors.js";
 import { sendOpenAIError } from "./error-helpers.js";
-import { syncModelContextWindows } from "../core/model-registry.ts";
+import {
+  QWEN_PRIMARY_MODEL,
+  syncModelContextWindows,
+} from "../core/model-registry.ts";
 
 const app = new Hono();
 
 function buildPublicModelCatalog<T extends { id: string }>(models: T[]): T[] {
-  const catalog = new Map<string, T>();
-
-  for (const model of models) {
-    if (model.id.endsWith("-no-thinking") || model.id.endsWith("-thinking")) {
-      continue;
-    }
-
-    catalog.set(model.id, model);
-    catalog.set(`${model.id}-no-thinking`, {
-      ...model,
-      id: `${model.id}-no-thinking`,
-      object: "model",
-    });
-  }
-
-  return [...catalog.values()];
+  const model = models.find((entry) => entry.id === QWEN_PRIMARY_MODEL);
+  return model ? [model] : [];
 }
 
 function getPreferredModelsAccountId(): string | undefined {
@@ -73,28 +62,7 @@ app.get("/v1/models/:model", async (c) => {
 
     const publicModels = buildPublicModelCatalog(models);
 
-    // Check for exact match first
-    let model = publicModels.find((entry) => entry.id === modelId);
-
-    // If not found, check if it's a -no-thinking or -thinking variant (upstream: a63f054)
-    if (!model) {
-      const isNoThinkingVariant = modelId.endsWith("-no-thinking");
-      const isThinkingVariant = modelId.endsWith("-thinking");
-
-      if (isNoThinkingVariant || isThinkingVariant) {
-        const suffix = isNoThinkingVariant ? "-no-thinking" : "-thinking";
-        const baseId = modelId.slice(0, -suffix.length);
-        const baseModel = publicModels.find((entry) => entry.id === baseId);
-
-        if (baseModel && !baseId.endsWith("-no-thinking") && !baseId.endsWith("-thinking")) {
-          model = {
-            ...baseModel,
-            id: modelId,
-            object: "model",
-          };
-        }
-      }
-    }
+    const model = publicModels.find((entry) => entry.id === modelId);
 
     if (!model) {
       return sendOpenAIError(c, new NotFoundError("Model not found"));
