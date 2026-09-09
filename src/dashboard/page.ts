@@ -127,10 +127,8 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
     <div class="fields">
       <label>Base URL<input id="baseUrl" readonly></label>
       <label>API key<input value="Use o valor de API_KEY do seu .env" readonly></label>
-      <label>Token administrativo (ADMIN_TOKEN)<input id="adminToken" type="password" placeholder="Valor de ADMIN_TOKEN"></label>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn secondary" id="saveTokenBtn">Salvar token</button>
       <button type="button" class="btn" data-close-config>Fechar</button>
     </div>
   </div>
@@ -142,15 +140,9 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[c]));
 
-function adminToken() {
-  return localStorage.getItem("qwenbridge.adminToken") || "";
-}
-
 async function api(url, options = {}) {
-  const token = adminToken();
   const headers = {
     "content-type": "application/json",
-    ...(token ? { "X-Admin-Token": token } : {}),
     ...(options.headers || {}),
   };
   const r = await fetch(url, { ...options, headers });
@@ -246,21 +238,12 @@ async function load() {
     $("#accounts").innerHTML =
       '<div class="empty"><strong>Falha ao carregar contas</strong><p>' +
       esc(e.message) +
-      (String(e.message).includes("Token")
-        ? " Abra Configuração e informe o ADMIN_TOKEN."
-        : "") +
       "</p></div>";
   }
 }
 
 function openConfig() {
-  $("#adminToken").value = adminToken();
   $("#configDialog").showModal();
-}
-
-function saveAdminToken() {
-  localStorage.setItem("qwenbridge.adminToken", $("#adminToken").value || "");
-  load();
 }
 
 async function addAccount(e) {
@@ -348,9 +331,6 @@ $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
 $("#addForm").addEventListener("submit", addAccount);
 $("#createForm").addEventListener("submit", createAccount);
-$("#saveTokenBtn").addEventListener("click", saveAdminToken);
-$("#adminToken").addEventListener("change", saveAdminToken);
-
 document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
 });

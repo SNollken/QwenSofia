@@ -4,16 +4,19 @@ import assert from "node:assert/strict";
 process.env.TEST_MOCK_QWEN_AUTH = "true";
 
 import { app, assertExposureCredentials } from "../api/server.ts";
+import { config } from "../core/config.ts";
 
 const SAVED_ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+const SAVED_ADMIN_HOST = config.server.host;
 
 function setAdminToken(value: string | undefined): void {
   if (value === undefined) delete process.env.ADMIN_TOKEN;
   else process.env.ADMIN_TOKEN = value;
 }
 
-test("admin routes refuse access when ADMIN_TOKEN is unset", async () => {
+test("admin routes allow loopback access without ADMIN_TOKEN", async () => {
   setAdminToken(undefined);
+  config.server.host = "127.0.0.1";
   try {
     const requests = [
       new Request("http://localhost/api/admin/overview"),
@@ -28,19 +31,18 @@ test("admin routes refuse access when ADMIN_TOKEN is unset", async () => {
     ];
     for (const request of requests) {
       const response = await app.fetch(request);
-      assert.equal(
-        response.status,
-        503,
-        `${request.method} ${new URL(request.url).pathname} should be refused without ADMIN_TOKEN`,
-      );
+      assert.notEqual(response.status, 401);
+      assert.notEqual(response.status, 503);
     }
   } finally {
     setAdminToken(SAVED_ADMIN_TOKEN);
+    config.server.host = SAVED_ADMIN_HOST;
   }
 });
 
-test("admin routes require the configured ADMIN_TOKEN", async () => {
+test("admin routes require the configured ADMIN_TOKEN outside loopback", async () => {
   setAdminToken("test-admin-token");
+  config.server.host = "0.0.0.0";
   try {
     const missing = await app.fetch(
       new Request("http://localhost/api/admin/overview"),
@@ -63,6 +65,7 @@ test("admin routes require the configured ADMIN_TOKEN", async () => {
     assert.notEqual(ok.status, 503, "valid token must not hit the disabled path");
   } finally {
     setAdminToken(SAVED_ADMIN_TOKEN);
+    config.server.host = SAVED_ADMIN_HOST;
   }
 });
 

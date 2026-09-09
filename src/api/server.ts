@@ -207,10 +207,6 @@ app.route("", anthropicApp);
 // OpenAI Responses API compatible routes
 app.route("", responsesApp);
 
-// Local management application. ADMIN_TOKEN é obrigatório: sem ele, toda rota
-// administrativa recusa acesso. Com ele configurado, o header X-Admin-Token
-// deve coincidir (comparação em tempo constante). Requisições por cliente são
-// limitadas para conter força bruta e abuso das operações caras.
 const ADMIN_RATE_WINDOW_MS = 60_000;
 const ADMIN_RATE_MAX_REQUESTS = 60;
 const adminRequestTimestamps = new Map<string, number[]>();
@@ -234,16 +230,18 @@ app.use("/api/admin/*", async (c, next) => {
       429,
     );
   }
-  const expected = process.env.ADMIN_TOKEN;
-  if (!expected) {
-    return c.json(
-      { error: "Administração desabilitada: configure ADMIN_TOKEN para habilitar" },
-      503,
-    );
-  }
-  const provided = c.req.header("X-Admin-Token");
-  if (!provided || !constantTimeStringEqual(provided, expected)) {
-    return c.json({ error: "Token administrativo inválido" }, 401);
+  if (!LOOPBACK_HOSTS.has(config.server.host)) {
+    const expected = process.env.ADMIN_TOKEN;
+    if (!expected) {
+      return c.json(
+        { error: "Administração desabilitada: configure ADMIN_TOKEN para habilitar" },
+        503,
+      );
+    }
+    const provided = c.req.header("X-Admin-Token");
+    if (!provided || !constantTimeStringEqual(provided, expected)) {
+      return c.json({ error: "Token administrativo inválido" }, 401);
+    }
   }
   await next();
 });
