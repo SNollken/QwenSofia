@@ -189,6 +189,7 @@ app.use("*", async (c, next) => {
       headers: c.req.raw.headers,
       body: capped,
       duplex: "half",
+      signal: c.req.raw.signal,
     } as RequestInit);
   }
   await next();
