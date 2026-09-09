@@ -42,12 +42,16 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 .modal-actions{display:flex;justify-content:flex-end;gap:8px}
 .notice{border:1px solid #3a3320;background:#1a160c;color:#e6d39a;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+[hidden]{display:none !important}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.metric-card{align-items:start;display:grid;gap:7px;min-height:128px}
+.metric-value{font-size:24px}
 </style></head><body>
 <header class="top">
   <div class="brand"><span class="logo">Q</span>QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></div>
   <nav class="nav">
-    <button type="button" class="active">Contas</button>
-    <button type="button" onclick="location.href='/metrics'">Métricas</button>
+    <button type="button" class="active" id="accountsBtn">Contas</button>
+    <button type="button" id="metricsBtn">Métricas</button>
     <button type="button" id="configBtn">Configuração</button>
   </nav>
 </header>
@@ -63,29 +67,42 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
     <button type="button" class="btn secondary" id="copyBtn">Copiar endpoint</button>
   </section>
 
-  <div class="section-head">
-    <div>
-      <h2>Fila de contas</h2>
-      <div class="muted" id="summary">Carregando contas…</div>
-    </div>
-    <div class="actions">
-      <button type="button" class="btn secondary" id="refreshBtn">Atualizar</button>
-      <button type="button" class="btn secondary" id="addBtn">Adicionar conta</button>
-      <button type="button" class="btn secondary" id="autoBtn">Criar automática</button>
-      <button type="button" class="btn" id="createBtn">Criar conta</button>
-    </div>
-  </div>
-
-  <section id="accounts" class="grid"></section>
-
-  <section class="jobs">
+  <div id="accountsView">
     <div class="section-head">
       <div>
-        <h2>Criação de contas</h2>
-        <div class="muted">Acompanhe cadastros e verificações em andamento.</div>
+        <h2>Fila de contas</h2>
+        <div class="muted" id="summary">Carregando contas…</div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="refreshBtn">Atualizar</button>
+        <button type="button" class="btn secondary" id="addBtn">Adicionar conta</button>
+        <button type="button" class="btn secondary" id="autoBtn">Criar automática</button>
+        <button type="button" class="btn" id="createBtn">Criar conta</button>
       </div>
     </div>
-    <div id="jobs" class="grid"></div>
+
+    <section id="accounts" class="grid"></section>
+
+    <section class="jobs">
+      <div class="section-head">
+        <div>
+          <h2>Criação de contas</h2>
+          <div class="muted">Acompanhe cadastros e verificações em andamento.</div>
+        </div>
+      </div>
+      <div id="jobs" class="grid"></div>
+    </section>
+  </div>
+
+  <section id="metricsView" hidden>
+    <div class="section-head">
+      <div>
+        <h2>Métricas do serviço</h2>
+        <div class="muted" id="metricsUpdated">Carregando métricas…</div>
+      </div>
+      <button type="button" class="btn secondary" id="metricsRefreshBtn">Atualizar</button>
+    </div>
+    <div id="metricsCards" class="metric-grid"></div>
   </section>
 </main>
 
@@ -209,6 +226,48 @@ function jobCard(j) {
   );
 }
 
+function metricCard(label, value, detail) {
+  return (
+    '<article class="card metric-card">' +
+      '<div class="muted">' + esc(label) + '</div>' +
+      '<strong class="metric-value">' + esc(value) + '</strong>' +
+      '<div class="muted">' + esc(detail) + '</div>' +
+    '</article>'
+  );
+}
+
+let activeView = "accounts";
+
+function showView(view) {
+  activeView = view;
+  const metrics = view === "metrics";
+  $("#accountsView").hidden = metrics;
+  $("#metricsView").hidden = !metrics;
+  $("#accountsBtn").classList.toggle("active", !metrics);
+  $("#metricsBtn").classList.toggle("active", metrics);
+}
+
+async function loadMetrics() {
+  try {
+    const d = await api("/health");
+    const runtime = d.accountRuntime || {};
+    const concurrency = d.accountConcurrency || {};
+    const cache = (d.metrics && d.metrics.cache) || {};
+    const cards = [
+      metricCard("Estado", d.status || "desconhecido", "Saúde geral do QwenSofia"),
+      metricCard("Navegadores prontos", (runtime.withHeaders || 0) + " / " + (runtime.initialized || 0), "com bx-ua / inicializados"),
+      metricCard("Requisições", concurrency.activeRequests || 0, (concurrency.queuedRequests || 0) + " aguardando na fila"),
+      metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0)),
+      metricCard("Cache", cache.connected ? "Conectado" : "Indisponível", (cache.keysCount || 0) + " chave(s) · " + (cache.memoryUsage || "0KB")),
+    ];
+    $("#metricsCards").innerHTML = cards.join("");
+    $("#metricsUpdated").textContent = "Atualizado em " + new Date(d.timestamp || Date.now()).toLocaleString("pt-BR");
+  } catch (e) {
+    $("#metricsUpdated").innerHTML = '<span class="error">' + esc(e.message) + '</span>';
+    $("#metricsCards").innerHTML = '<div class="empty">Não foi possível carregar as métricas.</div>';
+  }
+}
+
 async function load() {
   try {
     const d = await api("/api/admin/overview");
@@ -321,11 +380,20 @@ async function autoCreateOne() {
 }
 
 // Event bindings (no inline handlers for critical actions)
+$("#accountsBtn").addEventListener("click", () => {
+  showView("accounts");
+  load();
+});
+$("#metricsBtn").addEventListener("click", () => {
+  showView("metrics");
+  loadMetrics();
+});
 $("#configBtn").addEventListener("click", openConfig);
 $("#copyBtn").addEventListener("click", () => {
   navigator.clipboard.writeText($("#baseUrl").value || location.origin + "/v1");
 });
 $("#refreshBtn").addEventListener("click", load);
+$("#metricsRefreshBtn").addEventListener("click", loadMetrics);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
 $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
@@ -348,6 +416,6 @@ $("#accounts").addEventListener("click", (e) => {
 });
 
 load();
-setInterval(load, 5000);
+setInterval(() => activeView === "metrics" ? loadMetrics() : load(), 5000);
 </script>
 </body></html>`;
