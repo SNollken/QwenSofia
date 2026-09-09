@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
+import { resubmitRegistrationAfterCaptcha } from "../services/account-registration.ts";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
 import {
@@ -193,6 +194,30 @@ test("AutoCreator: reads cross-origin captcha images through a clean canvas", as
     assert.equal(result.ok, true, JSON.stringify({ result, statuses }));
     assert.ok(statuses.some((status) => status.startsWith("resolvendo captcha")));
     assert.ok(statuses.every((status) => !status.includes("image-bytes")));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: resubmits the signup form once after captcha returns to it", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="email" value="new-account@example.test">
+      <div class="qwenchat-auth-pc-register-policy">
+        <span role="checkbox" aria-checked="true"></span>
+      </div>
+      <button type="submit">Criar Conta</button>
+      <script>
+        document.querySelector('button').addEventListener('click', () => {
+          document.body.textContent = 'Check your email';
+        });
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), true);
+    assert.match(await page.locator("body").innerText(), /check your email/i);
   } finally {
     await browser.close();
   }
