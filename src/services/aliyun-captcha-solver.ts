@@ -357,7 +357,10 @@ async function readPuzzleLeft(page: Page): Promise<number | null> {
   const left = await page.evaluate(`(() => {
     const el = document.getElementById('aliyunCaptcha-puzzle');
     if (!el) return null;
-    return el.getBoundingClientRect().left;
+    const inlineLeft = Number.parseFloat(el.style.left);
+    if (Number.isFinite(inlineLeft)) return inlineLeft;
+    const computedLeft = Number.parseFloat(getComputedStyle(el).left);
+    return Number.isFinite(computedLeft) ? computedLeft : null;
   })()`);
   return typeof left === "number" ? left : null;
 }
@@ -556,7 +559,7 @@ export async function solveAliyunPuzzleCaptcha(
       continue;
     }
 
-    const targetPuzzleLeft = geo.imgBox.x + geo.targetDisplayX;
+    const targetPuzzleLeft = geo.targetDisplayX;
     const startX = box.x + Math.min(14, box.width / 2);
     const startY = box.y + box.height / 2;
 

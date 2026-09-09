@@ -203,6 +203,86 @@ test("AutoCreator: reads cross-origin captcha images through a clean canvas", as
   }
 });
 
+test("AutoCreator: follows the logical puzzle position while its visual position eases", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const backgroundSvg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="296" height="200">
+        <rect width="296" height="200" fill="#303030"/>
+        <path d="M150 150H165V142H183V150H198V168H190V188H158V168H150Z" fill="#f5f5f5"/>
+      </svg>
+    `;
+    const puzzleSvg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="52" height="200">
+        <path d="M2 150H17V142H35V150H50V168H42V188H10V168H2Z" fill="#909090"/>
+      </svg>
+    `;
+
+    await page.setContent(`
+      <style>
+        #aliyunCaptcha-img-box { position: relative; width: 300px; height: 200px; }
+        #aliyunCaptcha-img { position: absolute; width: 300px; height: 200px; }
+        #aliyunCaptcha-puzzle {
+          position: absolute;
+          left: 0;
+          width: 52px;
+          height: 200px;
+          transition: left 1500ms linear;
+        }
+        #aliyunCaptcha-sliding-body { position: relative; width: 300px; height: 40px; }
+        #aliyunCaptcha-sliding-slider { position: absolute; left: 0; width: 40px; height: 40px; }
+      </style>
+      <div>Access Verification</div>
+      <div id="aliyunCaptcha-img-box">
+        <img id="aliyunCaptcha-img" src="data:image/svg+xml,${encodeURIComponent(backgroundSvg)}">
+        <img id="aliyunCaptcha-puzzle" src="data:image/svg+xml,${encodeURIComponent(puzzleSvg)}">
+      </div>
+      <div id="aliyunCaptcha-sliding-body">
+        <div id="aliyunCaptcha-sliding-slider"></div>
+      </div>
+      <div id="captcha-status"></div>
+      <script>
+        const slider = document.querySelector('#aliyunCaptcha-sliding-slider');
+        const puzzle = document.querySelector('#aliyunCaptcha-puzzle');
+        const status = document.querySelector('#captcha-status');
+        let dragging = false;
+        let startX = 0;
+        slider.addEventListener('mousedown', (event) => {
+          dragging = true;
+          startX = event.clientX - (parseFloat(slider.style.left) || 0);
+        });
+        document.addEventListener('mousemove', (event) => {
+          if (!dragging) return;
+          const handleLeft = Math.max(0, Math.min(260, event.clientX - startX));
+          slider.style.left = handleLeft + 'px';
+          puzzle.style.left = (handleLeft * 248 / 260) + 'px';
+        });
+        document.addEventListener('mouseup', () => {
+          if (!dragging) return;
+          dragging = false;
+          const puzzleLeft = parseFloat(puzzle.style.left) || 0;
+          if (Math.abs(puzzleLeft - 150) <= 1.2) {
+            document.body.textContent = 'verified';
+          } else {
+            status.textContent = 'Verification failed';
+          }
+        });
+      </script>
+    `);
+
+    const statuses: string[] = [];
+    const result = await solveAliyunPuzzleCaptcha(page, {
+      maxAttempts: 1,
+      onAttempt: ({ status }) => statuses.push(status),
+    });
+
+    assert.equal(result.ok, true, JSON.stringify({ result, statuses }));
+  } finally {
+    await browser.close();
+  }
+});
+
 test("AutoCreator: resubmits the signup form once after captcha returns to it", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
