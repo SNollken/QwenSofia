@@ -473,3 +473,56 @@ test("AutoCreator: waits for signup-only fields after a slow login transition", 
     await browser.close();
   }
 });
+
+test("AutoCreator: retries signup after the React handler hydrates late", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route("https://chat.qwen.ai/auth**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `
+          <input name="email">
+          <input name="password" type="password">
+          <div class="qwenchat-auth-pc-switch-button">Inscrever-se</div>
+          <script>
+            setTimeout(() => {
+              document.querySelector('.qwenchat-auth-pc-switch-button')
+                .addEventListener('click', () => {
+                  document.body.innerHTML = \`
+                    <input name="username">
+                    <input name="email">
+                    <input name="password" type="password">
+                    <input name="checkPassword" type="password">
+                    <span role="checkbox" class="qwenchat-auth-pc-register-policy-checkbox" aria-checked="false" style="display:inline-block;width:20px;height:20px"></span>
+                    <button type="submit" disabled>Criar Conta</button>
+                  \`;
+                  const checkbox = document.querySelector('[role="checkbox"]');
+                  const submit = document.querySelector('button[type="submit"]');
+                  checkbox.addEventListener('click', () => {
+                    checkbox.setAttribute('aria-checked', 'true');
+                    submit.disabled = false;
+                  });
+                  submit.addEventListener('click', () => {
+                    document.body.textContent = 'late signup submitted';
+                  });
+                });
+            }, 2500);
+          </script>
+        `,
+      }),
+    );
+
+    await openSignupAndFill(
+      page,
+      "late-account@example.test",
+      "safe-password-123",
+      "Late Account",
+    );
+
+    assert.match(await page.locator("body").innerText(), /late signup submitted/i);
+  } finally {
+    await browser.close();
+  }
+});

@@ -697,22 +697,35 @@ export async function openSignupAndFill(
   });
   await sleep(1_500);
 
-  // Go to signup
-  const switched = await clickSignupSwitch(page);
-  if (!switched) {
-    // maybe already signup URL
-    await page.goto("https://chat.qwen.ai/auth?tab=signup", {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
-    }).catch(() => {});
-  }
-  await sleep(1_200);
-
-  // Wait for signup fields
-  await page
+  const signupFields = page
     .locator('input[name="username"], input[name="checkPassword"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 20_000 });
+    .first();
+  let opened = await signupFields.isVisible().catch(() => false);
+  let attemptedDirectNavigation = false;
+
+  for (let attempt = 0; !opened && attempt < 5; attempt += 1) {
+    const switched = await clickSignupSwitch(page);
+    if (!switched && !attemptedDirectNavigation) {
+      attemptedDirectNavigation = true;
+      await page
+        .goto("https://chat.qwen.ai/auth?tab=signup", {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
+        })
+        .catch(() => {});
+    }
+
+    opened = await signupFields
+      .waitFor({ state: "visible", timeout: 4_000 })
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  if (!opened) {
+    throw new Error(
+      "O formulário de inscrição do Qwen não abriu após tentativas confirmadas.",
+    );
+  }
 
   const nameOk = await fillByName(page, "username", displayName);
   const emailOk = await fillByName(page, "email", email);
