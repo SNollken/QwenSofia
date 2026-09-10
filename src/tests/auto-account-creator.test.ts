@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
 import {
   acceptRegistrationTerms,
+  clickSignupSwitch,
   clickByText,
   openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
@@ -101,6 +102,28 @@ test("AutoCreator: status exposes config flags", () => {
   assert.strictEqual(typeof status.busy, "boolean");
   assert.strictEqual(typeof status.message, "string");
   assert.ok(status.cooldownRemainingMs >= 0);
+});
+
+test("AutoCreator: opens signup while Qwen splash intercepts normal clicks", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <div class="qwenchat-auth-pc-switch-button">Inscrever-se</div>
+      <div id="splash-screen" style="position:fixed;inset:0;z-index:10">
+        <div id="splash-main-container">Carregando</div>
+      </div>
+      <script>
+        document.querySelector('.qwenchat-auth-pc-switch-button')
+          .addEventListener('click', () => document.body.dataset.signup = 'open');
+      </script>
+    `);
+
+    assert.equal(await clickSignupSwitch(page), true);
+    assert.equal(await page.locator("body").getAttribute("data-signup"), "open");
+  } finally {
+    await browser.close();
+  }
 });
 
 test("AutoCreator: accepts the Qwen role checkbox used by the signup form", async () => {
@@ -318,6 +341,7 @@ test("AutoCreator: resubmits the signup form once after captcha returns to it", 
     const page = await browser.newPage();
     await page.setContent(`
       <input name="email" value="new-account@example.test">
+      <input name="checkPassword" type="password" value="safe-password-123">
       <div class="qwenchat-auth-pc-register-policy">
         <span role="checkbox" aria-checked="true"></span>
       </div>
@@ -330,6 +354,56 @@ test("AutoCreator: resubmits the signup form once after captcha returns to it", 
     `);
 
     assert.equal(await resubmitRegistrationAfterCaptcha(page), true);
+    assert.match(await page.locator("body").innerText(), /check your email/i);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: does not resubmit a login form after captcha transition", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="email">
+      <input name="password" type="password">
+      <a>Termos de uso</a>
+      <button type="submit">Entrar</button>
+      <script>
+        document.querySelector('button').addEventListener('click', () => {
+          document.body.dataset.loginSubmitted = 'true';
+        });
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), false);
+    assert.equal(
+      await page.locator("body").getAttribute("data-login-submitted"),
+      null,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: lets a post-captcha signup transition finish", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="checkPassword" type="password">
+      <div class="qwenchat-auth-pc-register-policy">
+        <span role="checkbox" aria-checked="true"></span>
+      </div>
+      <button type="submit">Criar Conta</button>
+      <script>
+        setTimeout(() => {
+          document.body.textContent = 'Check your email';
+        }, 100);
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), false);
     assert.match(await page.locator("body").innerText(), /check your email/i);
   } finally {
     await browser.close();
@@ -395,6 +469,59 @@ test("AutoCreator: waits for signup-only fields after a slow login transition", 
     );
 
     assert.match(await page.locator("body").innerText(), /signup submitted/i);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: retries signup after the React handler hydrates late", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route("https://chat.qwen.ai/auth**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `
+          <input name="email">
+          <input name="password" type="password">
+          <div class="qwenchat-auth-pc-switch-button">Inscrever-se</div>
+          <script>
+            setTimeout(() => {
+              document.querySelector('.qwenchat-auth-pc-switch-button')
+                .addEventListener('click', () => {
+                  document.body.innerHTML = \`
+                    <input name="username">
+                    <input name="email">
+                    <input name="password" type="password">
+                    <input name="checkPassword" type="password">
+                    <span role="checkbox" class="qwenchat-auth-pc-register-policy-checkbox" aria-checked="false" style="display:inline-block;width:20px;height:20px"></span>
+                    <button type="submit" disabled>Criar Conta</button>
+                  \`;
+                  const checkbox = document.querySelector('[role="checkbox"]');
+                  const submit = document.querySelector('button[type="submit"]');
+                  checkbox.addEventListener('click', () => {
+                    checkbox.setAttribute('aria-checked', 'true');
+                    submit.disabled = false;
+                  });
+                  submit.addEventListener('click', () => {
+                    document.body.textContent = 'late signup submitted';
+                  });
+                });
+            }, 2500);
+          </script>
+        `,
+      }),
+    );
+
+    await openSignupAndFill(
+      page,
+      "late-account@example.test",
+      "safe-password-123",
+      "Late Account",
+    );
+
+    assert.match(await page.locator("body").innerText(), /late signup submitted/i);
   } finally {
     await browser.close();
   }

@@ -120,6 +120,34 @@ export async function clickByText(
   return false;
 }
 
+export async function clickSignupSwitch(page: Page): Promise<boolean> {
+  const signupSwitch = page
+    .locator(".qwenchat-auth-pc-switch-button")
+    .filter({
+      hasText:
+        /Inscrever-se|Inscrever|Sign up|Create account|Cadastrar|Registrar/i,
+    })
+    .first();
+  if (await signupSwitch.isVisible().catch(() => false)) {
+    try {
+      await signupSwitch.evaluate((element) => {
+        (element as HTMLElement).click();
+      });
+      return true;
+    } catch {
+    }
+  }
+
+  return clickByText(page, [
+    "Inscrever-se",
+    "Inscrever",
+    "Sign up",
+    "Create account",
+    "Cadastrar",
+    "Registrar",
+  ]);
+}
+
 async function fillByName(
   page: Page,
   name: string,
@@ -611,20 +639,38 @@ export async function acceptRegistrationTerms(page: Page): Promise<void> {
 export async function resubmitRegistrationAfterCaptcha(
   page: Page,
 ): Promise<boolean> {
-  const signupForm = page
-    .locator(
-      'input[name="email"], input[name="checkPassword"], button:has-text("Criar Conta")',
-    )
-    .first();
-  if (!(await signupForm.isVisible().catch(() => false))) return false;
-
-  await acceptRegistrationTerms(page);
+  const confirmation = page.locator('input[name="checkPassword"]').first();
   const submit = page
     .locator(
-      'button[type="submit"], button:has-text("Criar Conta"), button:has-text("Create Account"), button:has-text("Sign up")',
+      'button:has-text("Criar Conta"), button:has-text("Create Account"), button:has-text("Sign up")',
     )
     .first();
-  await submit.waitFor({ state: "visible", timeout: 10_000 });
+  if (
+    !(await confirmation.isVisible().catch(() => false)) ||
+    !(await submit.isVisible().catch(() => false))
+  ) {
+    return false;
+  }
+
+  await sleep(1_000);
+  if (
+    !(await confirmation.isVisible().catch(() => false)) ||
+    !(await submit.isVisible().catch(() => false))
+  ) {
+    return false;
+  }
+
+  try {
+    await acceptRegistrationTerms(page);
+  } catch (error) {
+    if (
+      !(await confirmation.isVisible().catch(() => false)) ||
+      !(await submit.isVisible().catch(() => false))
+    ) {
+      return false;
+    }
+    throw error;
+  }
   if (await submit.isDisabled().catch(() => false)) {
     throw new Error(
       "O formulário de inscrição continua desabilitado após o CAPTCHA.",
@@ -651,30 +697,35 @@ export async function openSignupAndFill(
   });
   await sleep(1_500);
 
-  // Go to signup
-  const switched =
-    (await clickByText(page, [
-      "Inscrever-se",
-      "Inscrever",
-      "Sign up",
-      "Create account",
-      "Cadastrar",
-      "Registrar",
-    ])) || false;
-  if (!switched) {
-    // maybe already signup URL
-    await page.goto("https://chat.qwen.ai/auth?tab=signup", {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
-    }).catch(() => {});
-  }
-  await sleep(1_200);
-
-  // Wait for signup fields
-  await page
+  const signupFields = page
     .locator('input[name="username"], input[name="checkPassword"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 20_000 });
+    .first();
+  let opened = await signupFields.isVisible().catch(() => false);
+  let attemptedDirectNavigation = false;
+
+  for (let attempt = 0; !opened && attempt < 5; attempt += 1) {
+    const switched = await clickSignupSwitch(page);
+    if (!switched && !attemptedDirectNavigation) {
+      attemptedDirectNavigation = true;
+      await page
+        .goto("https://chat.qwen.ai/auth?tab=signup", {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
+        })
+        .catch(() => {});
+    }
+
+    opened = await signupFields
+      .waitFor({ state: "visible", timeout: 4_000 })
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  if (!opened) {
+    throw new Error(
+      "O formulário de inscrição do Qwen não abriu após tentativas confirmadas.",
+    );
+  }
 
   const nameOk = await fillByName(page, "username", displayName);
   const emailOk = await fillByName(page, "email", email);
