@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
 import {
   acceptRegistrationTerms,
+  clickSignupSwitch,
   clickByText,
   openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
@@ -101,6 +102,28 @@ test("AutoCreator: status exposes config flags", () => {
   assert.strictEqual(typeof status.busy, "boolean");
   assert.strictEqual(typeof status.message, "string");
   assert.ok(status.cooldownRemainingMs >= 0);
+});
+
+test("AutoCreator: opens signup while Qwen splash intercepts normal clicks", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <div class="qwenchat-auth-pc-switch-button">Inscrever-se</div>
+      <div id="splash-screen" style="position:fixed;inset:0;z-index:10">
+        <div id="splash-main-container">Carregando</div>
+      </div>
+      <script>
+        document.querySelector('.qwenchat-auth-pc-switch-button')
+          .addEventListener('click', () => document.body.dataset.signup = 'open');
+      </script>
+    `);
+
+    assert.equal(await clickSignupSwitch(page), true);
+    assert.equal(await page.locator("body").getAttribute("data-signup"), "open");
+  } finally {
+    await browser.close();
+  }
 });
 
 test("AutoCreator: accepts the Qwen role checkbox used by the signup form", async () => {

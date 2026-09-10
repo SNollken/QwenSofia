@@ -120,6 +120,34 @@ export async function clickByText(
   return false;
 }
 
+export async function clickSignupSwitch(page: Page): Promise<boolean> {
+  const signupSwitch = page
+    .locator(".qwenchat-auth-pc-switch-button")
+    .filter({
+      hasText:
+        /Inscrever-se|Inscrever|Sign up|Create account|Cadastrar|Registrar/i,
+    })
+    .first();
+  if (await signupSwitch.isVisible().catch(() => false)) {
+    try {
+      await signupSwitch.evaluate((element) => {
+        (element as HTMLElement).click();
+      });
+      return true;
+    } catch {
+    }
+  }
+
+  return clickByText(page, [
+    "Inscrever-se",
+    "Inscrever",
+    "Sign up",
+    "Create account",
+    "Cadastrar",
+    "Registrar",
+  ]);
+}
+
 async function fillByName(
   page: Page,
   name: string,
@@ -652,15 +680,7 @@ export async function openSignupAndFill(
   await sleep(1_500);
 
   // Go to signup
-  const switched =
-    (await clickByText(page, [
-      "Inscrever-se",
-      "Inscrever",
-      "Sign up",
-      "Create account",
-      "Cadastrar",
-      "Registrar",
-    ])) || false;
+  const switched = await clickSignupSwitch(page);
   if (!switched) {
     // maybe already signup URL
     await page.goto("https://chat.qwen.ai/auth?tab=signup", {
