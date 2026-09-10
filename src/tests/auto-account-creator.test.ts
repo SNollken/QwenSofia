@@ -210,6 +210,38 @@ test("AutoCreator: accepts the Qwen role checkbox while it remains visually unst
   }
 });
 
+test("AutoCreator: accepts terms when a splash layer intercepts pointer clicks", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <span
+        role="checkbox"
+        aria-checked="false"
+        tabindex="0"
+        class="qwenchat-auth-pc-register-policy-checkbox"
+        style="display:inline-block;width:20px;height:20px"
+      ></span>
+      <div style="position:fixed;inset:0;z-index:10">Carregando</div>
+      <script>
+        const checkbox = document.querySelector('[role="checkbox"]');
+        checkbox.addEventListener('keydown', (event) => {
+          if (event.key === ' ') checkbox.setAttribute('aria-checked', 'true');
+        });
+      </script>
+    `);
+
+    await acceptRegistrationTerms(page);
+
+    assert.equal(
+      await page.locator('[role="checkbox"]').getAttribute("aria-checked"),
+      "true",
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
 test("AutoCreator: reads cross-origin captcha images through a clean canvas", async () => {
   const browser = await chromium.launch({ headless: true });
   try {

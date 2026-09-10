@@ -611,23 +611,32 @@ export async function acceptRegistrationTerms(page: Page): Promise<void> {
 
   if (await checkbox.count()) {
     const role = await checkbox.getAttribute("role");
-    const checked =
+    const isAccepted = () =>
       role === "checkbox"
-        ? (await checkbox.getAttribute("aria-checked")) === "true"
-        : await checkbox.isChecked().catch(() => false);
+        ? checkbox.getAttribute("aria-checked").then((value) => value === "true")
+        : checkbox.isChecked().catch(() => false);
+    const checked = await isAccepted();
 
     if (!checked) {
       if (role === "checkbox") {
-        await checkbox.click({ timeout: 5_000, force: true });
+        await checkbox.click({ timeout: 2_000 }).catch(() => {});
       } else {
-        await checkbox.check({ timeout: 5_000, force: true });
+        await checkbox.check({ timeout: 2_000 }).catch(() => {});
+      }
+
+      if (!(await isAccepted())) {
+        await checkbox.evaluate((element) => {
+          if (element instanceof HTMLElement) element.click();
+        });
+      }
+
+      if (!(await isAccepted())) {
+        await checkbox.focus({ timeout: 2_000 });
+        await checkbox.press("Space", { timeout: 2_000 });
       }
     }
 
-    const accepted =
-      role === "checkbox"
-        ? (await checkbox.getAttribute("aria-checked")) === "true"
-        : await checkbox.isChecked().catch(() => false);
+    const accepted = await isAccepted();
     if (!accepted) {
       throw new Error("Não foi possível aceitar os termos do cadastro do Qwen.");
     }
