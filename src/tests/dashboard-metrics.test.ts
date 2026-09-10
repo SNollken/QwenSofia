@@ -60,6 +60,12 @@ test("dashboard groups the pool into responsive account cards", () => {
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
 
+test("dashboard offers a confirmed bulk authentication action", () => {
+  assert.match(dashboardHtml, /id="authAllBtn">Autenticar todas/);
+  assert.match(dashboardHtml, /accounts\/authenticate-all/);
+  assert.match(dashboardHtml, /uma por vez/);
+});
+
 test("dashboard uses a black-cherry pink palette", () => {
   assert.match(dashboardHtml, /--bg:#09090b;.*--accent-start:#e85b94;--accent-end:#ff92bd/);
   assert.match(

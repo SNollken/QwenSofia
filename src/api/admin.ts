@@ -28,6 +28,22 @@ import {
 
 export const adminApp = new Hono();
 
+type BulkAuthenticationStatus = {
+  running: boolean;
+  total: number;
+  completed: number;
+  authenticated: number;
+  failed: number;
+};
+
+let bulkAuthentication: BulkAuthenticationStatus = {
+  running: false,
+  total: 0,
+  completed: 0,
+  authenticated: 0,
+  failed: 0,
+};
+
 export function isAccountAuthenticated(
   accountId: string,
   activeAccountIds: ReadonlySet<string>,
@@ -51,6 +67,7 @@ function accountView() {
 adminApp.get("/api/admin/overview", (c) =>
   c.json({
     accounts: accountView(),
+    bulkAuthentication,
     registrations: listRegistrationJobs(),
     autoCreator: getAutoCreateStatus(),
     proxy: { running: true, baseUrl: `${new URL(c.req.url).origin}/v1` },
@@ -147,6 +164,40 @@ adminApp.post("/api/admin/accounts/:id/authenticate", async (c) => {
   await initPlaywrightForAccount(account, config.playwright.headless);
   const hasHeaders = accountHasCapturedHeaders(account.id);
   return c.json({ ok: true, authenticated: true, ready: true, hasHeaders });
+});
+
+adminApp.post("/api/admin/accounts/authenticate-all", (c) => {
+  if (bulkAuthentication.running) {
+    return c.json({ error: "A autenticação em lote já está em andamento" }, 409);
+  }
+
+  const active = new Set(getActivePlaywrightAccountIds());
+  const pending = listAccounts().filter((account) => !active.has(account.id));
+  bulkAuthentication = {
+    running: true,
+    total: pending.length,
+    completed: 0,
+    authenticated: 0,
+    failed: 0,
+  };
+
+  void (async () => {
+    for (const account of pending) {
+      try {
+        await initPlaywrightForAccount(account, config.playwright.headless);
+        bulkAuthentication.authenticated += 1;
+      } catch (error) {
+        bulkAuthentication.failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️  [Admin] Autenticação em lote falhou: ${message}`);
+      } finally {
+        bulkAuthentication.completed += 1;
+      }
+    }
+    bulkAuthentication.running = false;
+  })();
+
+  return c.json({ ok: true, ...bulkAuthentication }, 202);
 });
 
 adminApp.post("/api/admin/registrations", async (c) => {

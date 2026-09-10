@@ -57,6 +57,7 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
       </div>
       <div class="actions">
         <button type="button" class="btn secondary" id="refreshBtn">Atualizar</button>
+        <button type="button" class="btn secondary" id="authAllBtn">Autenticar todas</button>
         <button type="button" class="btn secondary" id="addBtn">Adicionar conta</button>
         <button type="button" class="btn secondary" id="autoBtn">Criar automática</button>
         <button type="button" class="btn" id="createBtn">Criar conta</button>
@@ -262,6 +263,7 @@ async function load() {
       else acText = ac.message || "auto-create ativo";
     }
     const accounts = Array.isArray(d.accounts) ? d.accounts : [];
+    updateBulkAuthentication(d.bulkAuthentication);
     const registrations = Array.isArray(d.registrations) ? d.registrations : [];
     $("#summary").textContent = accounts.length + " conta(s) salva(s) — " + acText;
     $("#accounts").innerHTML = accounts.length
@@ -326,6 +328,21 @@ async function authenticate(id, button) {
   }
 }
 
+async function authenticateAll() {
+  const inactive = [...document.querySelectorAll("[data-auth]")].length;
+  if (inactive === 0) {
+    alert("Todas as contas já estão ativas.");
+    return;
+  }
+  if (!confirm("Autenticar " + inactive + " conta(s) inativa(s), uma por vez? As contas já ativas não serão interrompidas.")) return;
+  try {
+    await api("/api/admin/accounts/authenticate-all", { method: "POST" });
+    load();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
 async function removeAccount(id) {
   if (!confirm("Remover esta conta e sua sessão local?")) return;
   try {
@@ -368,6 +385,17 @@ async function saveConcurrency(e) {
   }
 }
 
+function updateBulkAuthentication(status) {
+  const button = $("#authAllBtn");
+  if (!status || !status.running) {
+    button.disabled = false;
+    button.textContent = "Autenticar todas";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Autenticando " + status.completed + "/" + status.total;
+}
+
 async function saveConcurrencyAndRestart() {
   const form = $("#concurrencyForm");
   if (!form.reportValidity()) return;
@@ -400,6 +428,7 @@ $("#metricsBtn").addEventListener("click", () => {
   loadMetrics();
 });
 $("#refreshBtn").addEventListener("click", load);
+$("#authAllBtn").addEventListener("click", authenticateAll);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
 $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
