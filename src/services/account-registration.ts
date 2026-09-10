@@ -148,28 +148,37 @@ export async function clickSignupSwitch(page: Page): Promise<boolean> {
   ]);
 }
 
-async function fillByName(
+export async function fillByName(
   page: Page,
   name: string,
   value: string,
 ): Promise<boolean> {
-  const loc = page.locator(`input[name="${name}"]`).first();
-  if (await loc.count()) {
-    await loc.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-    await loc.click({ timeout: 5_000 }).catch(() => {});
-    await loc.fill("");
-    await loc.fill(value);
-    // trigger React/antd change events
-    await loc.evaluate((el, v) => {
-      const input = el as HTMLInputElement;
-      const proto = Object.getPrototypeOf(input);
-      const desc = Object.getOwnPropertyDescriptor(proto, "value");
-      desc?.set?.call(input, v);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }, value);
-    return true;
+  const selector = `input[name="${name}"]`;
+  if (!(await page.locator(selector).count())) return false;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const field = page.locator(`${selector}:visible`).first();
+    try {
+      await field.waitFor({ state: "visible", timeout: 5_000 });
+      await field.fill(value, { timeout: 5_000 });
+      await field.evaluate(
+        (element, nextValue) => {
+          const input = element as HTMLInputElement;
+          const proto = Object.getPrototypeOf(input);
+          const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+          descriptor?.set?.call(input, nextValue);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        value,
+        { timeout: 5_000 },
+      );
+      if ((await field.inputValue({ timeout: 5_000 })) === value) return true;
+    } catch {
+    }
+    await sleep(300);
   }
+
   return false;
 }
 
