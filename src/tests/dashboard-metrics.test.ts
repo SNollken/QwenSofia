@@ -47,6 +47,11 @@ test("dashboard groups the pool into responsive account cards", () => {
     /\.accounts-grid \.card\{align-items:stretch;flex-direction:column\}/,
     "account actions must stack below the identity instead of competing for horizontal space",
   );
+  assert.match(
+    dashboardHtml,
+    /\.btn\.danger:only-of-type\{flex:0 0 auto;margin-left:auto;min-width:132px\}/,
+    "a lone remove action must retain a compact width",
+  );
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
 
