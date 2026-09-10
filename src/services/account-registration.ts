@@ -15,6 +15,7 @@ import {
   generateAccountPassword,
   generateDisplayName,
   listUrsaMessages,
+  waitForTempMailOrgVerificationLink,
   waitForUrsaVerificationLink,
   waitForVerificationEmail,
   type TempMailbox,
@@ -772,11 +773,6 @@ async function applyVerification(
   mailPage?: Page,
   options: { autoVerifyEmail?: boolean; headless?: boolean } = {},
 ): Promise<void> {
-  // Target system flow:
-  // 1) Signup + captcha done → stay pending
-  // 2) Poll inbox (tuamaeaquelaursa) automatically
-  // 3) When email arrives → open/click verification link automatically
-  // 4) Then login/auth into pool
   const autoVerify = options.autoVerifyEmail !== false;
   const headless = options.headless === true;
 
@@ -839,8 +835,36 @@ async function applyVerification(
       }
     }
 
-    // Dedicated automatic inbox poll + link extract (works headless)
-    if (inboxPage && mailbox.provider === "tuamaeaquelaursa" && autoVerify) {
+    if (inboxPage && mailbox.provider === "temp-mail.org" && autoVerify) {
+      try {
+        verification = await waitForTempMailOrgVerificationLink(
+          inboxPage,
+          mailbox,
+          {
+            timeoutMs: pollEvery + 8_000,
+            pollIntervalMs: 2_500,
+            onPoll: ({ messages, sample }) => {
+              lastMsgCount = messages;
+              setJob(
+                job,
+                "pending_activation",
+                `Headless auto · inbox: ${messages} msg · ${Math.round(elapsedMs / 1000)}s${sample ? ` · ${sample}` : ""}`,
+              );
+            },
+          },
+        );
+      } catch {
+        setJob(
+          job,
+          "pending_activation",
+          `Aguardando e-mail (auto-click) · inbox: ${lastMsgCount} msg · ${Math.round(elapsedMs / 1000)}s`,
+        );
+      }
+    } else if (
+      inboxPage &&
+      mailbox.provider === "tuamaeaquelaursa" &&
+      autoVerify
+    ) {
       try {
         // Keep inbox page on the mailbox URL
         if (

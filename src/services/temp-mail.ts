@@ -1,13 +1,14 @@
 /**
  * Temporary mailbox for Qwen signup verification.
  *
- * Primary (glm-style): browser inbox at https://tuamaeaquelaursa.com/
- * Fallback APIs: mail.tm / Guerrilla (often blocked by Qwen for delivery)
+ * Primary: temp-mail.org browser session + its authenticated inbox API.
+ * Fallbacks: tuamaeaquelaursa browser inbox, mail.tm and Guerrilla.
  */
 
 import type { Page } from "playwright";
 
 export type TempMailProvider =
+  | "temp-mail.org"
   | "tuamaeaquelaursa"
   | "mail.tm"
   | "guerrillamail";
@@ -15,7 +16,6 @@ export type TempMailProvider =
 export interface TempMailbox {
   email: string;
   provider: TempMailProvider;
-  /** mail.tm token */
   token?: string;
   /** guerrilla sid */
   sidToken?: string;
@@ -43,6 +43,8 @@ export interface VerificationPayload {
 
 const URSA_URL = "https://tuamaeaquelaursa.com/";
 const BROWSER_INBOX_WAIT_MS = 180_000;
+const TEMP_MAIL_ORG_URL = "https://temp-mail.org/en/";
+const TEMP_MAIL_ORG_API = "https://web2.temp-mail.org";
 
 const URSA_SELECTORS = {
   input: "input.email-section-input-email",
@@ -93,6 +95,99 @@ function randomLocalPart(prefix = "qwen"): string {
 
 function randomPassword(): string {
   return `Qwen@${Math.random().toString(36).slice(2, 10)}Aa1!`;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string").join("\n");
+  }
+  return "";
+}
+
+function messageFrom(value: unknown): string {
+  if (typeof value === "string") return value;
+  const record = objectRecord(value);
+  return (
+    stringValue(record?.address) ||
+    stringValue(record?.email) ||
+    stringValue(record?.name)
+  );
+}
+
+async function createTempMailOrgMailbox(
+  page: Page,
+): Promise<TempMailbox> {
+  const mailboxResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().replace(/\/$/, "") === `${TEMP_MAIL_ORG_API}/mailbox` &&
+      response.ok(),
+    { timeout: 45_000 },
+  );
+
+  await page.goto(TEMP_MAIL_ORG_URL, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+
+  const payload = objectRecord((await (await mailboxResponse).json()) as unknown);
+  const email = stringValue(payload?.mailbox).trim();
+  const token = stringValue(payload?.token).trim();
+  if (!email.includes("@") || !token) {
+    throw new Error("temp-mail.org: resposta da caixa sem e-mail/token");
+  }
+
+  await page
+    .locator("#mail")
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .catch(() => {});
+
+  const [login, domain] = email.split("@");
+  return {
+    email,
+    provider: "temp-mail.org",
+    token,
+    login,
+    domain,
+    browserInbox: true,
+  };
+}
+
+async function fetchTempMailOrgFromPage(
+  page: Page,
+  mailbox: TempMailbox,
+  pathname: string,
+): Promise<unknown> {
+  if (!mailbox.token) {
+    throw new Error("temp-mail.org: token da caixa ausente");
+  }
+
+  const url = `${TEMP_MAIL_ORG_API}${pathname}`;
+  const token = mailbox.token;
+  const response = (await page.evaluate(
+    `(async () => {
+      const result = await fetch(${JSON.stringify(url)}, {
+        headers: { authorization: 'Bearer ' + ${JSON.stringify(token)} },
+      });
+      return { ok: result.ok, status: result.status, body: await result.text() };
+    })()`,
+  )) as { ok?: unknown; status?: unknown; body?: unknown };
+
+  if (response.ok !== true) {
+    throw new Error(
+      `temp-mail.org: inbox HTTP ${typeof response.status === "number" ? response.status : "?"}`,
+    );
+  }
+
+  const body = stringValue(response.body);
+  return body.trim() ? (JSON.parse(body) as unknown) : {};
 }
 
 // ─── tuamaeaquelaursa (browser inbox — glm style) ───────────────────────────
@@ -202,6 +297,105 @@ function messageLooksLikeQwen(from: string, subject: string): boolean {
   const blob = `${from} ${subject}`.toLowerCase();
   return /qwen|alibaba|aliyun|verify|verifica|activa|confirma|security|account|e-mail|email/i.test(
     blob,
+  );
+}
+
+export async function listTempMailOrgMessages(
+  page: Page,
+  mailbox: TempMailbox,
+): Promise<TempMessage[]> {
+  const payload = objectRecord(
+    await fetchTempMailOrgFromPage(page, mailbox, "/messages"),
+  );
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  return messages.flatMap((value) => {
+    const message = objectRecord(value);
+    const id = stringValue(message?._id) || stringValue(message?.id);
+    if (!id) return [];
+    return [
+      {
+        id,
+        from: messageFrom(message?.from),
+        subject: stringValue(message?.subject),
+        text:
+          stringValue(message?.bodyText) || stringValue(message?.bodyPreview),
+        html: stringValue(message?.bodyHtml),
+        receivedAt: stringValue(message?.receivedAt) || undefined,
+      },
+    ];
+  });
+}
+
+async function getTempMailOrgMessage(
+  page: Page,
+  mailbox: TempMailbox,
+  summary: TempMessage,
+): Promise<TempMessage> {
+  const payload = objectRecord(
+    await fetchTempMailOrgFromPage(
+      page,
+      mailbox,
+      `/messages/${encodeURIComponent(summary.id)}`,
+    ),
+  );
+  return {
+    id: stringValue(payload?._id) || stringValue(payload?.id) || summary.id,
+    from: messageFrom(payload?.from) || summary.from,
+    subject: stringValue(payload?.subject) || summary.subject,
+    text:
+      stringValue(payload?.bodyText) ||
+      stringValue(payload?.text) ||
+      summary.text,
+    html: stringValue(payload?.bodyHtml) || stringValue(payload?.html),
+    receivedAt: stringValue(payload?.receivedAt) || summary.receivedAt,
+  };
+}
+
+export async function waitForTempMailOrgVerificationLink(
+  page: Page,
+  mailbox: TempMailbox,
+  options: {
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+    onPoll?: (info: {
+      elapsedMs: number;
+      messages: number;
+      sample?: string;
+    }) => void;
+  } = {},
+): Promise<VerificationPayload> {
+  const timeoutMs = options.timeoutMs ?? 180_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const messages = await listTempMailOrgMessages(page, mailbox);
+    options.onPoll?.({
+      elapsedMs: Date.now() - started,
+      messages: messages.length,
+      sample: messages[0]
+        ? `${messages[0].from} | ${messages[0].subject}`.slice(0, 80)
+        : undefined,
+    });
+
+    const preferred = messages.find((message) =>
+      messageLooksLikeQwen(message.from, message.subject),
+    );
+    const summary = preferred ?? messages[0];
+    if (summary) {
+      const message = await getTempMailOrgMessage(page, mailbox, summary);
+      const verification = extractVerification(message);
+      if (verification.link || verification.code) {
+        return { ...verification, message };
+      }
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  throw new Error(
+    `Timeout aguardando e-mail de verificação no temp-mail.org (${mailbox.email})`,
   );
 }
 
@@ -497,14 +691,19 @@ async function listGuerrillaMessages(box: TempMailbox): Promise<TempMessage[]> {
 
 // ─── public API ─────────────────────────────────────────────────────────────
 
-/**
- * Prefer browser-based tuamaeaquelaursa when a Playwright page is provided.
- * API providers are fallbacks only.
- */
 export async function createTempMailbox(
   page?: Page,
 ): Promise<TempMailbox> {
   if (page) {
+    try {
+      return await createTempMailOrgMailbox(page);
+    } catch (err) {
+      console.warn(
+        `[temp-mail] temp-mail.org falhou, tentando próximo provedor: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     try {
       return await createUrsaMailbox(page);
     } catch (err) {
