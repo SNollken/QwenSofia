@@ -849,15 +849,28 @@ test("StreamingToolParser: preserves literal <tool_call> example in fenced code 
   assert.strictEqual(result.toolCalls.length, 0);
 });
 
-test("StreamingToolParser: preserves literal tool_call block when tool name is undeclared", () => {
+test("StreamingToolParser: preserves explained literal tool_call block when tool name is undeclared", () => {
   const parser = new StreamingToolParser(TOOLS);
 
   const literal =
-    '<tool_call>{"name":"nome_da_ferramenta","arguments":{"parametro":"valor"}}</tool_call>';
+    'Exemplo: <tool_call>{"name":"nome_da_ferramenta","arguments":{"parametro":"valor"}}</tool_call>';
 
   const result = parser.feed(literal);
   assert.strictEqual(result.text, literal);
   assert.strictEqual(result.toolCalls.length, 0);
+});
+
+test("StreamingToolParser: suppresses a bare undeclared vision call with a Windows path", () => {
+  const parser = new StreamingToolParser(TERMINAL_TOOLS);
+  const raw = String.raw`<tool_call> {"name": "vision_analyze", "arguments": {"image_url": "C:\Users\sofia\AppData\Roaming\Hermes\composer-images\image.png", "query": "Descreva a imagem"}} </tool_call>`;
+
+  const result = parser.feed(raw);
+  const flushed = parser.flush();
+
+  assert.strictEqual(result.text + flushed.text, "");
+  assert.strictEqual(result.toolCalls.length + flushed.toolCalls.length, 0);
+  assert.strictEqual(result.malformedToolCall, undefined);
+  assert.strictEqual(flushed.malformedToolCall, undefined);
 });
 
 test("StreamingToolParser: passes through recovered tool call with undeclared name", () => {

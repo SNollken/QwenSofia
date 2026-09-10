@@ -1692,7 +1692,18 @@ export class StreamingToolParser {
     result: ParserResult,
     reason: string,
     closed = true,
+    suppressWhenBare = false,
   ): void {
+    if (suppressWhenBare && this.pendingLeadIn.trim().length === 0) {
+      logger.warn("[parser] Dropping bare undeclared tool_call block", {
+        reason,
+        openTag: this.currentOpenTag,
+        contentPreview: content.trim().substring(0, 300),
+      });
+      this.pendingLeadIn = "";
+      return;
+    }
+
     const closingTag = /^<(?:tool|tool_calls)>$/i.test(this.currentOpenTag)
       ? getToolCloseTag(this.currentOpenTag)
       : TOOL_END;
@@ -2232,6 +2243,8 @@ export class StreamingToolParser {
             content,
             result,
             `undeclared tool names in array: ${undeclaredToolNames.join(", ")}`,
+            true,
+            true,
           );
           return;
         }
@@ -2277,6 +2290,8 @@ export class StreamingToolParser {
             content,
             result,
             `undeclared tool names: ${undeclaredToolNames.join(", ")}`,
+            true,
+            true,
           );
           return;
         }

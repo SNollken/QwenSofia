@@ -410,9 +410,9 @@ test("non-stream: valid tool_call becomes structured tool_calls", async () => {
   }
 });
 
-test("non-stream: undeclared tool name in literal example is preserved as text", async () => {
+test("non-stream: explained undeclared tool example is preserved as text", async () => {
   const literal =
-    '<tool_call>{"name":"nome_da_ferramenta","arguments":{"parametro":"valor"}}</tool_call>';
+    'Exemplo: <tool_call>{"name":"nome_da_ferramenta","arguments":{"parametro":"valor"}}</tool_call>';
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({
@@ -439,6 +439,44 @@ test("non-stream: undeclared tool name in literal example is preserved as text",
     const body = await res.json();
     const message = body.choices[0].message;
     assert.strictEqual(message.content, literal);
+    assert.strictEqual(message.tool_calls, undefined);
+    assert.strictEqual(body.choices[0].finish_reason, "stop");
+  } finally {
+    restore();
+  }
+});
+
+test("non-stream: bare undeclared vision call is suppressed without retries", async () => {
+  const raw = String.raw`<tool_call> {"name": "vision_analyze", "arguments": {"image_url": "C:\Users\sofia\AppData\Roaming\Hermes\composer-images\image.png", "query": "Descreva a imagem"}} </tool_call>`;
+  let requestCount = 0;
+  const restore = setupFetchMock(() => {
+    requestCount++;
+    return createSseResponse([
+      `data: ${JSON.stringify({
+        choices: [{ delta: { phase: "answer", content: raw } }],
+      })}`,
+    ]);
+  });
+
+  try {
+    const req = new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "qwen3.6-plus",
+        stream: false,
+        tools: TOOLS,
+        messages: [{ role: "user", content: "descreva a imagem" }],
+      }),
+    });
+
+    const res = await app.fetch(req);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(requestCount, 1);
+
+    const body = await res.json();
+    const message = body.choices[0].message;
+    assert.strictEqual(message.content, "");
     assert.strictEqual(message.tool_calls, undefined);
     assert.strictEqual(body.choices[0].finish_reason, "stop");
   } finally {
