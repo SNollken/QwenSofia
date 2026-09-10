@@ -52,7 +52,6 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
   <nav class="nav">
     <button type="button" class="active" id="accountsBtn">Contas</button>
     <button type="button" id="metricsBtn">Métricas</button>
-    <button type="button" id="configBtn">Configuração</button>
   </nav>
 </header>
 <main class="wrap">
@@ -138,21 +137,9 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
   </form>
 </dialog>
 
-<dialog id="configDialog">
-  <div class="modal">
-    <h3>Configuração do cliente</h3>
-    <div class="fields">
-      <label>Base URL<input id="baseUrl" readonly></label>
-      <label>API key<input value="Use o valor de API_KEY do seu .env" readonly></label>
-    </div>
-    <div class="modal-actions">
-      <button type="button" class="btn" data-close-config>Fechar</button>
-    </div>
-  </div>
-</dialog>
-
 <script>
 const $ = (s) => document.querySelector(s);
+let currentBaseUrl = location.origin + "/v1";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[c]));
@@ -272,9 +259,9 @@ async function load() {
   try {
     const d = await api("/api/admin/overview");
     const base = (d.proxy && d.proxy.baseUrl) || (location.origin + "/v1");
+    currentBaseUrl = base;
     $("#endpoint").textContent = base.endsWith("/v1") ? base.slice(0, -3) : base;
     $("#serverText").textContent = "Clientes OpenAI e Anthropic podem usar " + base;
-    $("#baseUrl").value = base;
 
     const ac = d.autoCreator || {};
     let acText = "auto-create desativado";
@@ -299,10 +286,6 @@ async function load() {
       esc(e.message) +
       "</p></div>";
   }
-}
-
-function openConfig() {
-  $("#configDialog").showModal();
 }
 
 async function addAccount(e) {
@@ -388,9 +371,8 @@ $("#metricsBtn").addEventListener("click", () => {
   showView("metrics");
   loadMetrics();
 });
-$("#configBtn").addEventListener("click", openConfig);
 $("#copyBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText($("#baseUrl").value || location.origin + "/v1");
+  navigator.clipboard.writeText(currentBaseUrl);
 });
 $("#refreshBtn").addEventListener("click", load);
 $("#metricsRefreshBtn").addEventListener("click", loadMetrics);
@@ -402,10 +384,6 @@ $("#createForm").addEventListener("submit", createAccount);
 document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
 });
-document.querySelectorAll("[data-close-config]").forEach((btn) => {
-  btn.addEventListener("click", () => $("#configDialog").close());
-});
-
 $("#accounts").addEventListener("click", (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;

@@ -29,3 +29,9 @@ test("dashboard Métricas renders an in-panel health view", () => {
     "initialized browsers must be the primary account runtime metric",
   );
 });
+
+test("dashboard omits the obsolete configuration control", () => {
+  assert.doesNotMatch(dashboardHtml, /id="configBtn"/);
+  assert.doesNotMatch(dashboardHtml, /id="configDialog"/);
+  assert.match(dashboardHtml, /navigator\.clipboard\.writeText\(currentBaseUrl\)/);
+});
