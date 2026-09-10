@@ -35,3 +35,10 @@ test("dashboard omits the obsolete configuration control", () => {
   assert.doesNotMatch(dashboardHtml, /id="configDialog"/);
   assert.match(dashboardHtml, /navigator\.clipboard\.writeText\(currentBaseUrl\)/);
 });
+
+test("dashboard groups the pool into responsive account cards", () => {
+  assert.match(dashboardHtml, /class="grid accounts-grid"/);
+  assert.match(dashboardHtml, /class="section-kicker">Gerenciamento do pool/);
+  assert.match(dashboardHtml, /class="account-email"/);
+  assert.match(dashboardHtml, /@media\(max-width:680px\)/);
+});
