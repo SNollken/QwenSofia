@@ -48,4 +48,6 @@ test("dashboard refreshes metrics automatically and exposes concurrency control"
   assert.match(dashboardHtml, /setInterval\([^,]+, 30000\)/);
   assert.match(dashboardHtml, /id="concurrencyDialog"/);
   assert.match(dashboardHtml, /api\("\/api\/admin\/account-concurrency"/);
+  assert.match(dashboardHtml, /Salvar e reiniciar agora/);
+  assert.match(dashboardHtml, /account-concurrency\/restart/);
 });

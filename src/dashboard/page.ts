@@ -127,6 +127,7 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
     <div class="modal-actions">
       <button type="button" class="ghost" data-close>Cancelar</button>
       <button class="btn">Salvar limite</button>
+      <button type="button" class="btn secondary" id="restartConcurrencyBtn">Salvar e reiniciar agora</button>
     </div>
   </form>
 </dialog>
@@ -389,6 +390,28 @@ async function saveConcurrency(e) {
   }
 }
 
+async function saveConcurrencyAndRestart() {
+  const form = $("#concurrencyForm");
+  if (!form.reportValidity()) return;
+  if (!confirm("Salvar o novo limite e reiniciar o QwenSofia agora? Requisições em andamento serão interrompidas.")) return;
+  const button = $("#restartConcurrencyBtn");
+  button.disabled = true;
+  button.textContent = "Reiniciando…";
+  const value = Number(new FormData(form).get("maxConcurrent"));
+  try {
+    await api("/api/admin/account-concurrency/restart", {
+      method: "PUT",
+      body: JSON.stringify({ maxConcurrent: value }),
+    });
+    $("#concurrencyDialog").close();
+    alert("Limite salvo. O QwenSofia está reiniciando; aguarde alguns segundos antes de usar o painel.");
+  } catch (x) {
+    alert(x.message);
+    button.disabled = false;
+    button.textContent = "Salvar e reiniciar agora";
+  }
+}
+
 // Event bindings (no inline handlers for critical actions)
 $("#accountsBtn").addEventListener("click", () => {
   showView("accounts");
@@ -408,6 +431,7 @@ $("#autoBtn").addEventListener("click", autoCreateOne);
 $("#addForm").addEventListener("submit", addAccount);
 $("#createForm").addEventListener("submit", createAccount);
 $("#concurrencyForm").addEventListener("submit", saveConcurrency);
+$("#restartConcurrencyBtn").addEventListener("click", saveConcurrencyAndRestart);
 document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
 });

@@ -72,6 +72,22 @@ adminApp.put("/api/admin/account-concurrency", async (c) => {
   }
 });
 
+adminApp.put("/api/admin/account-concurrency/restart", async (c) => {
+  const body: { maxConcurrent?: number } = await c.req
+    .json<{ maxConcurrent?: number }>()
+    .catch(() => ({}));
+  try {
+    const maxConcurrent = setAccountMaxConcurrent(Number(body.maxConcurrent));
+    setTimeout(() => process.kill(process.pid, "SIGTERM"), 250).unref();
+    return c.json({ ok: true, maxConcurrent, restarting: true });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      400,
+    );
+  }
+});
+
 adminApp.post("/api/admin/accounts", async (c) => {
   const body = await c.req.json<{
     email?: string;
