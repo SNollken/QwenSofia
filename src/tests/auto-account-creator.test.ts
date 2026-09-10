@@ -6,6 +6,7 @@ import {
   acceptRegistrationTerms,
   clickSignupSwitch,
   clickByText,
+  fillByName,
   openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
 } from "../services/account-registration.ts";
@@ -121,6 +122,25 @@ test("AutoCreator: opens signup while Qwen splash intercepts normal clicks", asy
 
     assert.equal(await clickSignupSwitch(page), true);
     assert.equal(await page.locator("body").getAttribute("data-signup"), "open");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: fills the visible field when a hidden auth field comes first", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="email" style="display:none">
+      <input name="email">
+    `);
+
+    assert.equal(await fillByName(page, "email", "visible@example.test"), true);
+    assert.equal(
+      await page.locator('input[name="email"]:visible').inputValue(),
+      "visible@example.test",
+    );
   } finally {
     await browser.close();
   }
