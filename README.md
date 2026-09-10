@@ -2,7 +2,7 @@
 
 API compatível com OpenAI que conecta clientes ao **Qwen (`chat.qwen.ai`)** com suporte a múltiplas contas, tool calling robusto, uploads multimodais e sessões persistentes. Inclui modo Playwright com stealth para evasão de anti-bot, rotação com cooldown, variantes `-no-thinking`, sumarização de contexto, cache comprimido e observabilidade.
 
-O **QwenSofia** é uma distribuição independente baseada no [QwenProxy-Saints](https://github.com/SaintsDEV/QwenProxy-Saints) e no QwenBridge. Ela adiciona **painel web de contas**, **criação/autenticação automática** e **auto-create no rate limit** — sem versionar banco SQLite, senhas ou perfis de browser.
+O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https://github.com/johngbl/qwenproxy-old), com funcionalidades incorporadas do fork [QwenProxy-Saints](https://github.com/SaintsDEV/QwenProxy-Saints). Ela adiciona **painel web de contas**, **criação/autenticação automática** e **auto-create no rate limit** — sem versionar banco SQLite, senhas ou perfis de browser.
 
 [![CI](https://github.com/SNollken/QwenSofia/actions/workflows/ci.yml/badge.svg)](https://github.com/SNollken/QwenSofia/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
@@ -38,7 +38,7 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenProxy-Saints]
 
 ## Origem e manutenção
 
-O código original e a licença ISC permanecem atribuídos a **Pedro Farias**. A distribuição `QwenSofia` e suas adaptações são mantidas por **Sofia**. O histórico Git foi preservado para que a origem de cada alteração continue auditável.
+O projeto tem como base o [QwenBridge](https://github.com/johngbl/qwenproxy-old) e também incorpora funcionalidades do [QwenProxy-Saints](https://github.com/SaintsDEV/QwenProxy-Saints). O código original e a licença ISC permanecem atribuídos a **Pedro Farias**. A distribuição `QwenSofia` e suas adaptações são mantidas por **Sofia**. O histórico Git foi preservado para que a origem de cada alteração continue auditável.
 
 Por compatibilidade com instalações e clientes existentes, alguns identificadores internos ainda usam o nome legado, como `QWENBRIDGE_DB_PATH`, `qwenbridge.db`, chaves de cache/localStorage e o header `X-QwenBridge-Timing`.
 
