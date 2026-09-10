@@ -52,6 +52,11 @@ test("dashboard groups the pool into responsive account cards", () => {
     /\.btn\.danger:only-of-type\{flex:0 0 auto;margin-left:auto;min-width:132px\}/,
     "a lone remove action must retain a compact width",
   );
+  assert.match(
+    dashboardHtml,
+    /\.accounts-grid \.meta \.btn\{flex:0 0 30%;max-width:170px\}/,
+    "account actions must use a bounded fraction of the action row",
+  );
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
 

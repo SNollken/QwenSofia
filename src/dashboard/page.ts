@@ -19,6 +19,7 @@ button,input{font:inherit}
 .grid{display:grid;gap:10px}.accounts-grid{grid-template-columns:repeat(auto-fill,minmax(330px,1fr));align-items:stretch}
 .card{border:1px solid rgba(145,160,198,.18);border-radius:15px;background:linear-gradient(145deg,rgba(27,34,51,.95),rgba(16,20,31,.94));padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 8px 22px rgba(0,0,0,.12);transition:border-color .16s ease,transform .16s ease}.card:hover{border-color:rgba(151,166,255,.38);transform:translateY(-1px)}
 .accounts-grid .card{align-items:stretch;flex-direction:column}.accounts-grid .identity{width:100%}.accounts-grid .meta{width:100%;justify-content:flex-end}
+.accounts-grid .meta .btn{flex:0 0 30%;max-width:170px}
 .accounts-grid .meta .btn.danger:only-of-type{flex:0 0 auto;margin-left:auto;min-width:132px}
 .card.job{align-items:flex-start}
 .identity{display:flex;align-items:center;gap:12px;min-width:0}
@@ -38,7 +39,7 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
 .jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(145,160,198,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#b7c2d8;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#b9c7ff;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
-@media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.card .meta .btn{flex:1}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
+@media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
 </style></head><body>
 <header class="top">
   <div class="brand"><span class="brand-copy">QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
