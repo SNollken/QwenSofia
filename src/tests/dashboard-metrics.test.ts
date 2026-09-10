@@ -40,6 +40,11 @@ test("dashboard groups the pool into responsive account cards", () => {
   assert.match(dashboardHtml, /class="grid accounts-grid"/);
   assert.match(dashboardHtml, /class="section-kicker">Gerenciamento do pool/);
   assert.match(dashboardHtml, /class="account-email"/);
+  assert.match(
+    dashboardHtml,
+    /\.accounts-grid \.card\{align-items:stretch;flex-direction:column\}/,
+    "account actions must stack below the identity instead of competing for horizontal space",
+  );
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
 

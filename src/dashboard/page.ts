@@ -21,6 +21,7 @@ button,input{font:inherit}
 .section-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:0 0 16px;flex-wrap:wrap}.section-head h2{margin:0 0 5px;font-size:24px;letter-spacing:-.035em}.section-kicker{color:#9eabff;font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;margin:0 0 8px}
 .grid{display:grid;gap:10px}.accounts-grid{grid-template-columns:repeat(auto-fill,minmax(330px,1fr));align-items:stretch}
 .card{border:1px solid rgba(145,160,198,.18);border-radius:15px;background:linear-gradient(145deg,rgba(27,34,51,.95),rgba(16,20,31,.94));padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 8px 22px rgba(0,0,0,.12);transition:border-color .16s ease,transform .16s ease}.card:hover{border-color:rgba(151,166,255,.38);transform:translateY(-1px)}
+.accounts-grid .card{align-items:stretch;flex-direction:column}.accounts-grid .identity{width:100%}.accounts-grid .meta{width:100%;justify-content:flex-end}
 .card.job{align-items:flex-start}
 .identity{display:flex;align-items:center;gap:12px;min-width:0}
 .avatar{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#2e4160,#222b52);display:grid;place-items:center;font-weight:800;color:#d6e4ff;flex:0 0 auto}.account-email{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-id{font:11px ui-monospace,monospace;margin-top:4px;opacity:.75}

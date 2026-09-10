@@ -246,7 +246,10 @@ app.use("/api/admin/*", async (c, next) => {
   await next();
 });
 app.route("", adminApp);
-app.get("/", (c) => c.html(dashboardHtml));
+app.get("/", (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.html(dashboardHtml);
+});
 
 app.get("/health", async (c) => {
   const status = await watchdog?.getStatus();
