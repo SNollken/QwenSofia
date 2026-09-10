@@ -1479,7 +1479,19 @@ export class StreamingToolParser {
       normalized = (normalized as any).arguments as Record<string, unknown>;
     }
 
-    return this.coerceJsonLikeArgumentStrings(normalized);
+    const coerced = this.coerceJsonLikeArgumentStrings(normalized);
+    if (
+      name === "vision_analyze" &&
+      Object.prototype.hasOwnProperty.call(toolProperties, "question") &&
+      !Object.prototype.hasOwnProperty.call(toolProperties, "query") &&
+      !Object.prototype.hasOwnProperty.call(coerced, "question") &&
+      typeof coerced.query === "string"
+    ) {
+      const { query, ...rest } = coerced;
+      return { ...rest, question: query };
+    }
+
+    return coerced;
   }
 
   private coerceJsonLikeArgumentStrings(

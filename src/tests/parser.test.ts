@@ -873,6 +873,33 @@ test("StreamingToolParser: suppresses a bare undeclared vision call with a Windo
   assert.strictEqual(flushed.malformedToolCall, undefined);
 });
 
+test("StreamingToolParser: maps vision query to the declared question parameter", () => {
+  const parser = new StreamingToolParser([{
+    type: "function" as const,
+    function: {
+      name: "vision_analyze",
+      parameters: {
+        type: "object",
+        properties: {
+          image_url: { type: "string" },
+          question: { type: "string" },
+        },
+        required: ["image_url", "question"],
+      },
+    },
+  }]);
+  const raw = String.raw`<tool_call> {"name": "vision_analyze", "arguments": {"image_url": "C:\Users\sofia\image.png", "query": "Descreva a imagem"}} </tool_call>`;
+
+  const result = parser.feed(raw);
+
+  assert.strictEqual(result.text, "");
+  assert.strictEqual(result.toolCalls.length, 1);
+  assert.deepStrictEqual(result.toolCalls[0].arguments, {
+    image_url: String.raw`C:\Users\sofia\image.png`,
+    question: "Descreva a imagem",
+  });
+});
+
 test("StreamingToolParser: passes through recovered tool call with undeclared name", () => {
   const parser = new StreamingToolParser(TOOLS);
 
