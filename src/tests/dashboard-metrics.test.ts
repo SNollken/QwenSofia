@@ -60,6 +60,14 @@ test("dashboard groups the pool into responsive account cards", () => {
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
 
+test("dashboard uses a restrained dusk gradient palette", () => {
+  assert.match(dashboardHtml, /--accent-start:#7c8cff;--accent-end:#9c8cff/);
+  assert.match(
+    dashboardHtml,
+    /background:linear-gradient\(135deg,var\(--accent-start\),var\(--accent-end\)\)/,
+  );
+});
+
 test("dashboard refreshes metrics automatically and exposes concurrency control", () => {
   assert.doesNotMatch(dashboardHtml, /id="metricsRefreshBtn"/);
   assert.match(dashboardHtml, /setInterval\([^,]+, 30000\)/);
