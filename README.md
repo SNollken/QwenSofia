@@ -1,6 +1,6 @@
 # QwenSofia
 
-API compatível com OpenAI que conecta clientes ao **Qwen (`chat.qwen.ai`)** com suporte a múltiplas contas, tool calling robusto, uploads multimodais e sessões persistentes. Inclui modo Playwright com stealth para evasão de anti-bot, rotação com cooldown, variantes `-no-thinking`, sumarização de contexto, cache comprimido e observabilidade.
+Gateway com compatibilidade parcial com as APIs OpenAI e Anthropic que conecta clientes ao **Qwen (`chat.qwen.ai`)**. O núcleo oferece Chat Completions, Responses API, múltiplas contas, tool calling reconstruído a partir da saída do modelo, uploads multimodais no fluxo Chat e sessões persistentes. Também inclui Playwright com stealth, rotação com cooldown, sumarização de contexto, cache comprimido e observabilidade.
 
 O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https://github.com/johngbl/qwenproxy-old), com funcionalidades incorporadas do fork [QwenProxy-Saints](https://github.com/SaintsDEV/QwenProxy-Saints). Ela adiciona **painel web de contas**, **criação/autenticação automática** e **auto-create no rate limit** — sem versionar banco SQLite, senhas ou perfis de browser.
 
@@ -13,26 +13,27 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https
 
 ## Principais funcionalidades
 
-- **Compatibilidade OpenAI** — Endpoints `/v1/chat/completions`, `/v1/models`, `/v1/chat/completions/stop` e `/v1/upload`.
-- **Compatibilidade Anthropic** — Endpoint `/v1/messages` para SDKs Anthropic.
+- **Chat Completions (OpenAI-like)** — Streaming, non-streaming, tools, histórico e multimodal nos formatos tratados pelo projeto.
+- **Responses API (OpenAI-like)** — Texto, function tools, streaming e `previous_response_id` em memória; recursos avançados têm limitações documentadas abaixo.
+- **Compatibilidade Anthropic parcial** — `/v1/messages` oferece texto, streaming e tools básicos, mas ainda não tem paridade total com o SDK/API oficial.
 - **Playwright com stealth** — Captura de headers reais (`bx-ua`, `bx-umidtoken`) por conta com `playwright-extra` e `puppeteer-extra-plugin-stealth`.
 - **Anti-bot retry** — Detecção automática de `FAIL_SYS_USER_VALIDATE`/`RGV587_ERROR` com retry e rotação de conta.
 - **Dynamic timeouts** — Timeout baseado no tamanho do payload (`120s + 30s/MB`).
-- **Payload size limit** — Validação de tamanho (10MB) antes de enviar ao Qwen.
-- **Modelos Qwen atuais** — Funciona com a família `qwen3.x` e expõe variantes sintéticas `-no-thinking`.
-- **Provider público** — O endpoint `/v1/models` identifica os modelos como `QwenSofia` no campo `owned_by`, incluindo as variantes sintéticas.
+- **Limites de payload** — Teto de transporte configurável (120 MiB por padrão) e teto de 50 MiB no payload encaminhado ao Qwen.
+- **Modelo normalizado** — O catálogo público expõe `qwen3.8-max`; aliases recebidos nas rotas de geração são normalizados para esse modelo.
+- **Provider público** — O endpoint `/v1/models` identifica o modelo como `QwenSofia` no campo `owned_by`.
 - **Múltiplas contas** — Rotação round-robin, cooldown automático e inicialização paralela.
 - **Aplicação de gerenciamento** — Painel local (`/`) e janela desktop para listar, adicionar, autenticar, remover e acompanhar contas.
 - **Cadastro assistido** — Preenche o cadastro do Qwen, aguarda a verificação humana e incorpora a sessão confirmada ao pool.
-- **Criação automática de contas** — Quando **todas** as contas entram em rate limit/cooldown (ou o pool está vazio), cria + autentica uma nova conta e retenta a request.
+- **Criação automática de contas (dependente do upstream)** — Quando todas as contas ficam indisponíveis, tenta criar e autenticar uma nova conta. O resultado depende do fluxo atual do Qwen, CAPTCHA e e-mail temporário.
 - **Auto-auth no pool** — Contas adicionadas/criadas pelo painel ou API entram autenticadas no pool (Playwright).
 - **Persistência de sessão** — Cookies/JWT do Qwen persistidos por conta no SQLite.
 - **Uploads multimodais** — Imagens, vídeo, áudio e documentos enviados ao OSS do Qwen.
-- **Tool calling robusto** — Parser tolerante a stream fragmentado, JSON malformado e blocos XML/Hermes-style.
-- **Gerenciamento de contexto** — Truncamento, sumarização, detecção de tópico e preservação de sessão.
+- **Tool calling por adaptação** — Injeta instruções no prompt e reconstrói chamadas com um parser tolerante a stream fragmentado, JSON malformado e blocos XML/Hermes-style; não é tool calling nativo do backend.
+- **Gerenciamento de contexto** — Truncamento, sumarização, rollover e preservação de sessão thread-native.
 - **Cache com compressão Brotli** — TTL em memória, métricas e serialização segura.
 - **Observabilidade** — `/health`, `/metrics`, watchdog e métricas Prometheus.
-- **Deploy simples** — `npm`, Docker e graceful shutdown.
+- **Execução local e Docker** — `npm`, imagem Playwright e graceful shutdown, observando os requisitos de segurança descritos abaixo.
 
 ---
 
@@ -74,6 +75,7 @@ flowchart TD
     Proxy --> Models["/v1/models"]
     Proxy --> Upload["/v1/upload"]
     Proxy --> Anthropic["/v1/messages"]
+    Proxy --> Responses["/v1/responses"]
     Chat --> Context["Thread-native context manager"]
     Context --> Summary["Context summarizer"]
     Chat --> Accounts["Account manager"]
@@ -89,7 +91,7 @@ flowchart TD
 
 ## Autenticação
 
-QwenSofia usa Playwright por padrão e de forma exclusiva. Cada conta configurada abre uma sessão real de browser para capturar cookies e headers anti-bot (`bx-ua`, `bx-umidtoken`, `bx-v`).
+QwenSofia usa Playwright para autenticação e acesso ao Qwen. Cada conta ativa pode abrir uma sessão real de browser para capturar cookies e headers anti-bot (`bx-ua`, `bx-umidtoken`, `bx-v`). O funcionamento depende da interface e das proteções atuais de `chat.qwen.ai`.
 
 ```env
 PLAYWRIGHT_HEADLESS=true
@@ -105,7 +107,7 @@ npx playwright install chromium
 
 ## Modelos e contexto
 
-O proxy expõe somente `qwen3.8-max` via `/v1/models` e normaliza qualquer alias recebido para esse modelo.
+O proxy expõe somente `qwen3.8-max` via `/v1/models` e normaliza os aliases recebidos pelas rotas de geração para esse modelo. Variantes com sufixo `-no-thinking` podem ser aceitas internamente para desativar reasoning, mas não são anunciadas no catálogo público.
 O campo público `owned_by` usa o nome do provider `QwenSofia`.
 
 | Modelo | Contexto | Divisor de tokens |
@@ -120,7 +122,7 @@ O campo público `owned_by` usa o nome do provider `QwenSofia`.
 |---|---:|---|
 | Node.js | 20+ | Recomendado usar LTS |
 | npm | 9+ | Incluído com Node |
-| Playwright | - | Para modo Playwright (`npx playwright install chromium`) |
+| Playwright | - | Necessário para autenticação/acesso ao Qwen (`npx playwright install chromium`) |
 | Docker | opcional | Para deploy em container |
 
 ---
@@ -133,20 +135,29 @@ O campo público `owned_by` usa o nome do provider `QwenSofia`.
 git clone https://github.com/SNollken/QwenSofia.git
 cd QwenSofia
 npm install
-npx playwright install chromium  # Se usar Playwright
+npx playwright install chromium
 ```
 
 ### Via Docker
+
+Defina credenciais antes de iniciar. O Compose faz bind do app em `0.0.0.0` dentro do container; por segurança, o servidor recusa esse bind sem `API_KEY` e `ADMIN_TOKEN`.
+
+```env
+API_KEY=troque-por-uma-chave-forte
+ADMIN_TOKEN=troque-por-outro-token-forte
+```
 
 ```bash
 docker-compose up -d
 ```
 
+A porta é publicada apenas no loopback do host (`127.0.0.1`) pela configuração padrão do Compose.
+
 ---
 
 ## Início rápido
 
-Crie um `.env` na raiz. O `.env.example` contém a lista completa das opções suportadas pelo projeto.
+Crie um `.env` na raiz. O `.env.example` contém as opções mais comuns; a seção de variáveis abaixo documenta os principais controles do projeto.
 
 ### Exemplo mínimo
 
@@ -189,18 +200,18 @@ npm run desktop
 
 CAPTCHA e confirmação de e-mail, quando exigidos pelo Qwen, devem ser concluídos manualmente na janela do browser. Depois disso a conta é autenticada e inserida no pool automaticamente.
 
-### Auto-create no rate limit
+### Auto-create no rate limit (experimental)
 
 Quando o pool inteiro está em cooldown/rate limit (ou não há contas):
 
 1. O proxy **não força** limpar cooldowns (com auto-create ativo)
 2. Dispara o criador automático **completo**
-3. Gera e-mail (Saints-style / mail.tm) e preenche cadastro no Qwen
-4. Captura cookies/sessão (como `qwenproxy-create.exe`); e-mail OTP é best-effort, não bloqueia sozinho
+3. Gera um e-mail temporário e preenche o cadastro no Qwen
+4. Tenta resolver/apresentar CAPTCHA, verificar o e-mail e capturar cookies/sessão
 5. Só marca `ready=true` depois do Playwright do pool autenticar de verdade
 6. **Retenta a request** com a conta nova
 
-Se CAPTCHA não for resolvido automaticamente, a janela do browser fica aberta para conclusão manual — a conta **não** entra no pool até a sessão autenticada ser capturada.
+Esse fluxo não é garantido: mudanças no site do Qwen, bloqueios anti-bot, indisponibilidade do provedor de e-mail ou CAPTCHA podem interrompê-lo. O cadastro abre o browser visível por padrão para permitir intervenção humana. A conta **não** entra no pool até uma sessão autenticada ser capturada.
 
 Desative com `ACCOUNT_CREATOR_ENABLED=false`.
 
@@ -209,10 +220,12 @@ Desative com `ACCOUNT_CREATOR_ENABLED=false`.
 ## Testes
 
 ```bash
-npm test           # Todos
+npm test           # Suite mock seguida dos testes live
 npm run test:mock  # Só mocks
-npm run test:live  # Só reais/live
+npm run test:live  # Integração real; exige contas/Qwen acessíveis
 ```
+
+Os testes mock validam o comportamento interno sem comprovar a disponibilidade do Qwen, CAPTCHA, e-mail temporário ou outros serviços externos. Os testes `dashboard-metrics.test.ts` e `personalization-flow.test.ts` existem no repositório, mas ainda não fazem parte dos scripts acima.
 
 ---
 
@@ -223,9 +236,10 @@ npm run test:live  # Só reais/live
 | Variável | Default | Descrição |
 |---|---|---|
 | `PORT` | `3000` | Porta HTTP do proxy. |
-| `HOST` | `0.0.0.0` | Host de bind. Para uso local, `127.0.0.1`. |
+| `HOST` | `127.0.0.1` | Host de bind. Bind não local exige `API_KEY` e `ADMIN_TOKEN`. |
 | `API_KEY` | vazio | Protege rotas `/v1/*` com `Authorization: Bearer ...`. |
-| `ADMIN_TOKEN` | vazio | Opcional. Protege `/api/admin/*`; informe o mesmo token em Configuração no painel. |
+| `ADMIN_TOKEN` | vazio | Protege `/api/admin/*` quando o bind não é loopback; informe o mesmo token no painel. |
+| `MAX_REQUEST_BODY_BYTES` | `125829120` | Teto do corpo HTTP (120 MiB). O payload encaminhado ao Qwen tem teto adicional de 50 MiB. |
 
 ### Autenticação e sessão
 
@@ -279,6 +293,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | `ACCOUNT_CREATOR_COOLDOWN_MS` | `30000` | Intervalo mínimo entre criações automáticas. |
 | `ACCOUNT_CREATOR_MAX_BATCH` | `5` | Máximo de contas por chamada manual/batch. |
 | `ACCOUNT_CREATOR_AUTO_AUTH` | `true` | Autentica automaticamente ao adicionar conta via admin/API. |
+| `ACCOUNT_CREATOR_FORCE_HEADLESS` | `false` | Força headless no cadastro, que usa browser visível por padrão; pode falhar diante de CAPTCHA. |
 
 ### Timeouts
 
@@ -288,7 +303,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | `TOTAL_REQUEST_TIMEOUT` | `300000` | Timeout máximo de geração. |
 | `REASONING_MODEL_TIMEOUT` | `600000` | Timeout para modelos com reasoning. |
 
-**Nota:** Timeouts são dinâmicos: `120s + 30s por MB de payload`.
+**Nota:** O timeout do request ao Qwen é calculado como `120s + 30s por MiB de payload`. Com reasoning ativo, nunca fica abaixo de `REASONING_MODEL_TIMEOUT`. `TOTAL_REQUEST_TIMEOUT` é um limite separado do ciclo completo da rota.
 
 ### Cache
 
@@ -335,6 +350,17 @@ O QwenSofia detecta automaticamente erros de anti-bot:
 
 ## Endpoints
 
+### Estado de compatibilidade
+
+| Interface | Estado | Limitações relevantes |
+|---|---|---|
+| Chat Completions | Funcional, compatibilidade parcial | Tool calls são reconstruídas por prompt/parser; vários parâmetros avançados da OpenAI não têm suporte comprovado. |
+| Responses API | Funcional para texto e function tools | Built-in tools (`web_search`, `file_search`, `shell`, `code_interpreter`, MCP etc.) são aceitas pelo schema, mas não executadas. `input_image` e `input_file` ainda não chegam ao backend. |
+| Anthropic Messages | Funcional para texto e tools básicos | Com `API_KEY`, o fluxo atual pode exigir `Authorization: Bearer` e `x-api-key`; multimodal/documentos e alguns campos são parciais. A contagem de tokens é estimada. |
+| Modelos | Funcional em formato OpenAI-like | Há duas implementações de `/v1/models`; a resposta específica Anthropic pode ser sombreada pela rota registrada primeiro. |
+
+O projeto não implementa `/v1/completions` (Completions legacy). O estado de `previous_response_id` da Responses API fica somente em memória, expira após 24 horas e não sobrevive ao reinício. Consulte [`docs/rotas-compatibilidade-confirmada.md`](docs/rotas-compatibilidade-confirmada.md) para a matriz técnica detalhada.
+
 ### OpenAI Compatible
 
 | Rota | Método | Descrição |
@@ -343,6 +369,14 @@ O QwenSofia detecta automaticamente erros de anti-bot:
 | `/v1/chat/completions/stop` | POST | Abortar geração ativa |
 | `/v1/models` | GET | Listar modelos |
 | `/v1/models/:id` | GET | Modelo específico |
+
+### OpenAI Responses API
+
+| Rota | Método | Descrição |
+|---|---|---|
+| `/v1/responses` | POST | Geração em formato Responses (streaming + non-streaming) |
+| `/v1/responses/:response_id` | GET | Recuperar resposta ainda armazenada em memória |
+| `/v1/responses/:response_id` | DELETE | Remover resposta do armazenamento em memória |
 
 ### Anthropic Compatible
 
@@ -362,7 +396,7 @@ O QwenSofia detecta automaticamente erros de anti-bot:
 
 ### Admin (painel / automação)
 
-> Se `ADMIN_TOKEN` estiver definido, envie header `X-Admin-Token`.
+> Em bind não local, configure `ADMIN_TOKEN` e envie o header `X-Admin-Token`. Em loopback, as rotas administrativas são locais e não exigem esse header no comportamento atual.
 
 | Rota | Método | Descrição |
 |---|---|---|
@@ -405,6 +439,8 @@ import Anthropic from "@anthropic-ai/sdk";
 const client = new Anthropic({
   baseURL: "http://localhost:3000",
   apiKey: "sua-api-key",
+  // Necessário no comportamento atual quando API_KEY está configurada:
+  defaultHeaders: { Authorization: "Bearer sua-api-key" },
 });
 
 const message = await client.messages.create({
@@ -457,9 +493,11 @@ services:
     build: .
     container_name: qwensofia
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     env_file:
       - .env
+    environment:
+      - HOST=0.0.0.0
     volumes:
       - ./data:/app/data
     restart: unless-stopped
@@ -471,6 +509,7 @@ services:
 ```
 
 O container ajusta permissões no startup para `data/db` e `data/qwen_profiles`, evitando falhas comuns com volumes bind-mounted.
+Como o bind interno não é loopback, `API_KEY` e `ADMIN_TOKEN` precisam estar definidos no `.env`.
 
 ---
 
@@ -484,7 +523,8 @@ QwenSofia/
 │   ├── core/             # Config, accounts, database, metrics
 │   ├── routes/
 │   │   ├── anthropic/    # Anthropic API compatible
-│   │   └── chat/         # Chat completions, streaming
+│   │   ├── chat/         # Chat completions, streaming
+│   │   └── responses/    # Responses API compatible
 │   ├── services/
 │   │   ├── auth-playwright.ts # Headers Playwright + mock de testes
 │   │   ├── playwright.ts      # Playwright + stealth
@@ -506,9 +546,9 @@ QwenSofia/
 | `npm start` | Iniciar servidor |
 | `npm run desktop` | Iniciar servidor e painel em uma janela desktop |
 | `npm run login` | Gerenciar contas |
-| `npm test` | Rodar todos os testes |
+| `npm test` | Rodar a suite mock e depois os testes live |
 | `npm run test:mock` | Testes com mock |
-| `npm run test:live` | Testes reais |
+| `npm run test:live` | Testes reais; exigem contas e upstream acessível |
 | `npm run typecheck` | Verificar tipos |
 
 
