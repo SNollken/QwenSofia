@@ -341,6 +341,7 @@ test("AutoCreator: resubmits the signup form once after captcha returns to it", 
     const page = await browser.newPage();
     await page.setContent(`
       <input name="email" value="new-account@example.test">
+      <input name="checkPassword" type="password" value="safe-password-123">
       <div class="qwenchat-auth-pc-register-policy">
         <span role="checkbox" aria-checked="true"></span>
       </div>
@@ -353,6 +354,56 @@ test("AutoCreator: resubmits the signup form once after captcha returns to it", 
     `);
 
     assert.equal(await resubmitRegistrationAfterCaptcha(page), true);
+    assert.match(await page.locator("body").innerText(), /check your email/i);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: does not resubmit a login form after captcha transition", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="email">
+      <input name="password" type="password">
+      <a>Termos de uso</a>
+      <button type="submit">Entrar</button>
+      <script>
+        document.querySelector('button').addEventListener('click', () => {
+          document.body.dataset.loginSubmitted = 'true';
+        });
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), false);
+    assert.equal(
+      await page.locator("body").getAttribute("data-login-submitted"),
+      null,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: lets a post-captcha signup transition finish", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <input name="checkPassword" type="password">
+      <div class="qwenchat-auth-pc-register-policy">
+        <span role="checkbox" aria-checked="true"></span>
+      </div>
+      <button type="submit">Criar Conta</button>
+      <script>
+        setTimeout(() => {
+          document.body.textContent = 'Check your email';
+        }, 100);
+      </script>
+    `);
+
+    assert.equal(await resubmitRegistrationAfterCaptcha(page), false);
     assert.match(await page.locator("body").innerText(), /check your email/i);
   } finally {
     await browser.close();

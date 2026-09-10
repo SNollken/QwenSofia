@@ -639,20 +639,38 @@ export async function acceptRegistrationTerms(page: Page): Promise<void> {
 export async function resubmitRegistrationAfterCaptcha(
   page: Page,
 ): Promise<boolean> {
-  const signupForm = page
-    .locator(
-      'input[name="email"], input[name="checkPassword"], button:has-text("Criar Conta")',
-    )
-    .first();
-  if (!(await signupForm.isVisible().catch(() => false))) return false;
-
-  await acceptRegistrationTerms(page);
+  const confirmation = page.locator('input[name="checkPassword"]').first();
   const submit = page
     .locator(
-      'button[type="submit"], button:has-text("Criar Conta"), button:has-text("Create Account"), button:has-text("Sign up")',
+      'button:has-text("Criar Conta"), button:has-text("Create Account"), button:has-text("Sign up")',
     )
     .first();
-  await submit.waitFor({ state: "visible", timeout: 10_000 });
+  if (
+    !(await confirmation.isVisible().catch(() => false)) ||
+    !(await submit.isVisible().catch(() => false))
+  ) {
+    return false;
+  }
+
+  await sleep(1_000);
+  if (
+    !(await confirmation.isVisible().catch(() => false)) ||
+    !(await submit.isVisible().catch(() => false))
+  ) {
+    return false;
+  }
+
+  try {
+    await acceptRegistrationTerms(page);
+  } catch (error) {
+    if (
+      !(await confirmation.isVisible().catch(() => false)) ||
+      !(await submit.isVisible().catch(() => false))
+    ) {
+      return false;
+    }
+    throw error;
+  }
   if (await submit.isDisabled().catch(() => false)) {
     throw new Error(
       "O formulário de inscrição continua desabilitado após o CAPTCHA.",
