@@ -66,7 +66,7 @@ test("dashboard uses a black-cherry pink palette", () => {
     dashboardHtml,
     /background:linear-gradient\(135deg,var\(--accent-start\),var\(--accent-end\)\)/,
   );
-  assert.match(dashboardHtml, /class="account-mark"/);
+  assert.doesNotMatch(dashboardHtml, /class="account-mark"/);
   assert.doesNotMatch(dashboardHtml, /class="avatar"/);
 });
 

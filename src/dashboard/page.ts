@@ -22,8 +22,7 @@ button,input{font:inherit}
 .accounts-grid .meta .btn{flex:0 0 30%;max-width:170px}
 .accounts-grid .meta .btn.danger:only-of-type{flex:0 0 auto;margin-left:auto;min-width:132px}
 .card.job{align-items:flex-start}
-.identity{display:flex;align-items:center;gap:12px;min-width:0}
-.account-mark{color:#ff9ac2;font:700 11px ui-monospace,monospace;letter-spacing:.08em;flex:0 0 auto}.account-email{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-id{font:11px ui-monospace,monospace;margin-top:4px;opacity:.75}
+.identity{min-width:0}.account-email{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-id{font:11px ui-monospace,monospace;margin-top:4px;opacity:.75}
 .badge{border:1px solid rgba(97,209,124,.42);background:rgba(38,101,58,.34);color:#a7f3ba;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:750;white-space:nowrap}.badge.off{border-color:rgba(255,123,135,.36);background:rgba(111,38,48,.34);color:#ffc0c8}.badge.cool{border-color:rgba(243,201,105,.38);background:rgba(105,78,23,.28);color:#ffe19a}
 .empty{border:1px dashed rgba(202,164,188,.3);border-radius:15px;padding:24px;color:var(--muted);background:rgba(24,20,26,.58)}
 .error{color:var(--red);margin-top:6px}
@@ -155,10 +154,6 @@ async function api(url, options = {}) {
   return data;
 }
 
-function initials(email) {
-  return String(email || "??").slice(0, 2).toUpperCase();
-}
-
 function cooldownBadge(cooldown) {
   if (!cooldown || !cooldown.remainingMs || cooldown.remainingMs <= 0) return "";
   const mins = Math.max(1, Math.ceil(cooldown.remainingMs / 60000));
@@ -174,10 +169,7 @@ function accountCard(a) {
     : '<button type="button" class="btn secondary" data-auth="' + esc(a.id) + '">Autenticar</button>';
   return (
     '<article class="card">' +
-      '<div class="identity">' +
-        '<span class="account-mark">' + esc(initials(a.email)) + "</span>" +
-        '<div><strong class="account-email">' + esc(a.email) + '</strong><div class="muted account-id">' + esc(a.id) + "</div></div>" +
-      "</div>" +
+      '<div class="identity"><strong class="account-email">' + esc(a.email) + '</strong><div class="muted account-id">' + esc(a.id) + "</div></div>" +
       '<div class="meta">' +
         authBadge +
         cooldownBadge(a.cooldown) +
