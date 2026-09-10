@@ -8,7 +8,7 @@ import {
   removeAccount,
 } from "../core/accounts.ts";
 import { getCooldownStatus } from "../core/account-manager.ts";
-import { config } from "../core/config.ts";
+import { config, setAccountMaxConcurrent } from "../core/config.ts";
 import {
   accountHasCapturedHeaders,
   closePlaywrightForAccount,
@@ -56,6 +56,21 @@ adminApp.get("/api/admin/overview", (c) =>
     proxy: { running: true, baseUrl: `${new URL(c.req.url).origin}/v1` },
   }),
 );
+
+adminApp.put("/api/admin/account-concurrency", async (c) => {
+  const body: { maxConcurrent?: number } = await c.req
+    .json<{ maxConcurrent?: number }>()
+    .catch(() => ({}));
+  try {
+    const maxConcurrent = setAccountMaxConcurrent(Number(body.maxConcurrent));
+    return c.json({ ok: true, maxConcurrent });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      400,
+    );
+  }
+});
 
 adminApp.post("/api/admin/accounts", async (c) => {
   const body = await c.req.json<{

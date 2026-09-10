@@ -42,3 +42,10 @@ test("dashboard groups the pool into responsive account cards", () => {
   assert.match(dashboardHtml, /class="account-email"/);
   assert.match(dashboardHtml, /@media\(max-width:680px\)/);
 });
+
+test("dashboard refreshes metrics automatically and exposes concurrency control", () => {
+  assert.doesNotMatch(dashboardHtml, /id="metricsRefreshBtn"/);
+  assert.match(dashboardHtml, /setInterval\([^,]+, 30000\)/);
+  assert.match(dashboardHtml, /id="concurrencyDialog"/);
+  assert.match(dashboardHtml, /api\("\/api\/admin\/account-concurrency"/);
+});

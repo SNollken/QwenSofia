@@ -1,5 +1,31 @@
 import { z } from "zod";
+import fs from "node:fs";
+import path from "node:path";
 import { QWEN_PRIMARY_MODEL } from "./model-registry.ts";
+
+const runtimeSettingsPath = path.resolve("data", "runtime-settings.json");
+
+function readSavedAccountConcurrency(): number | undefined {
+  try {
+    const value = JSON.parse(fs.readFileSync(runtimeSettingsPath, "utf8"))
+      .accountMaxConcurrent;
+    return Number.isInteger(value) && value >= 1 && value <= 100
+      ? value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveAccountConcurrency(maxConcurrent: number) {
+  fs.mkdirSync(path.dirname(runtimeSettingsPath), { recursive: true });
+  const temporaryPath = `${runtimeSettingsPath}.${process.pid}.tmp`;
+  fs.writeFileSync(
+    temporaryPath,
+    JSON.stringify({ accountMaxConcurrent: maxConcurrent }, null, 2),
+  );
+  fs.renameSync(temporaryPath, runtimeSettingsPath);
+}
 
 const envSchema = z
   .object({
@@ -240,7 +266,7 @@ export const config = {
     maxDelayMs: parseInt(env.RETRY_MAX_DELAY_MS),
   },
   accountRequests: {
-    maxConcurrent: env.ACCOUNT_MAX_CONCURRENT_REQUESTS,
+    maxConcurrent: readSavedAccountConcurrency() ?? env.ACCOUNT_MAX_CONCURRENT_REQUESTS,
     queueTimeoutMs: env.ACCOUNT_REQUEST_QUEUE_TIMEOUT_MS,
   },
   antiBot: {
@@ -273,5 +299,14 @@ export const config = {
     deleteAllChatsOnShutdown: env.DELETE_ALL_CHATS_ON_SHUTDOWN === "true",
   },
 };
+
+export function setAccountMaxConcurrent(maxConcurrent: number): number {
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 100) {
+    throw new Error("A concorrência deve ser um número inteiro entre 1 e 100");
+  }
+  saveAccountConcurrency(maxConcurrent);
+  config.accountRequests.maxConcurrent = maxConcurrent;
+  return maxConcurrent;
+}
 
 export type Config = typeof config;

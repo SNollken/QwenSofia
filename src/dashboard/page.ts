@@ -5,8 +5,7 @@ export const dashboardHtml = `<!doctype html>
 *{box-sizing:border-box}body{min-height:100vh;margin:0;background:radial-gradient(circle at 10% -10%,rgba(93,104,239,.24),transparent 31rem),radial-gradient(circle at 100% 0,rgba(118,74,222,.14),transparent 24rem),var(--bg);color:var(--text);font:14px Inter,Segoe UI,Arial,sans-serif;letter-spacing:.005em}
 button,input{font:inherit}
 .top{min-height:76px;border-bottom:1px solid rgba(142,158,196,.17);display:flex;align-items:center;justify-content:space-between;padding:0 max(28px,calc((100vw - 1180px)/2));background:rgba(8,11,18,.74);backdrop-filter:blur(18px);position:sticky;top:0;z-index:2}
-.brand{display:flex;align-items:center;gap:12px;font-weight:760;font-size:18px;letter-spacing:-.02em}.brand-copy{display:flex;align-items:center;gap:10px}
-.logo{width:36px;height:36px;border-radius:12px;background:linear-gradient(145deg,#9bc1ff,#6c5ce7 58%,#b084fb);box-shadow:0 8px 24px rgba(106,91,231,.34);display:grid;place-items:center;font-size:18px}
+.brand{display:flex;align-items:center;font-weight:760;font-size:18px;letter-spacing:-.02em}.brand-copy{display:flex;align-items:center;gap:10px}
 .endpoint{color:#c1c9dc;font:12px ui-monospace,monospace;border:1px solid rgba(147,159,195,.22);border-radius:999px;padding:6px 10px;background:rgba(18,23,35,.65)}
 .nav{display:flex;gap:5px;padding:4px;border:1px solid rgba(147,159,195,.16);border-radius:12px;background:rgba(20,25,38,.65)}
 .nav button,.ghost{color:#b9c3d7;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 13px;cursor:pointer;transition:.16s ease}
@@ -39,11 +38,11 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 .notice{border:1px solid #3a3320;background:#1a160c;color:#e6d39a;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
-.jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(145,160,198,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#b7c2d8;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}
+.jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(145,160,198,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#b7c2d8;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#b9c7ff;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
 @media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.status{align-items:flex-start;gap:14px;flex-direction:column}.status .btn{width:100%}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.card .meta .btn{flex:1}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
 </style></head><body>
 <header class="top">
-  <div class="brand"><span class="logo">Q</span><span class="brand-copy">QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
+  <div class="brand"><span class="brand-copy">QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
   <nav class="nav">
     <button type="button" class="active" id="accountsBtn">Contas</button>
     <button type="button" id="metricsBtn">Métricas</button>
@@ -97,7 +96,6 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
         <h2>Métricas do serviço</h2>
         <div class="muted" id="metricsUpdated">Carregando métricas…</div>
       </div>
-      <button type="button" class="btn secondary" id="metricsRefreshBtn">Atualizar</button>
     </div>
     <div id="metricsCards" class="metric-grid"></div>
   </section>
@@ -114,6 +112,21 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
     <div class="modal-actions">
       <button type="button" class="ghost" data-close>Cancelar</button>
       <button class="btn">Adicionar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="concurrencyDialog">
+  <form class="modal" id="concurrencyForm">
+    <h3>Concorrência por conta</h3>
+    <div class="muted">Define quantas requisições a mesma conta pode processar ao mesmo tempo.</div>
+    <div class="fields">
+      <label>Requisições simultâneas por conta<input id="concurrencyInput" name="maxConcurrent" type="number" min="1" max="100" step="1" required></label>
+    </div>
+    <div class="notice">A alteração é aplicada imediatamente e fica salva para os próximos reinícios.</div>
+    <div class="modal-actions">
+      <button type="button" class="ghost" data-close>Cancelar</button>
+      <button class="btn">Salvar limite</button>
     </div>
   </form>
 </dialog>
@@ -211,12 +224,13 @@ function jobCard(j) {
   );
 }
 
-function metricCard(label, value, detail) {
+function metricCard(label, value, detail, action = "") {
   return (
     '<article class="card metric-card">' +
       '<div class="metric-label">' + esc(label) + '</div>' +
       '<strong class="metric-value">' + esc(value) + '</strong>' +
       '<div class="muted">' + esc(detail) + '</div>' +
+      action +
     '</article>'
   );
 }
@@ -242,7 +256,7 @@ async function loadMetrics() {
       metricCard("Estado", d.status || "desconhecido", "Saúde geral do QwenSofia"),
       metricCard("Navegadores", runtime.initialized || 0, (runtime.withHeaders || 0) + " com bx-ua em cache"),
       metricCard("Requisições", concurrency.activeRequests || 0, (concurrency.queuedRequests || 0) + " aguardando na fila"),
-      metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0)),
+      metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0), '<button type="button" class="metric-action" id="concurrencyBtn">Alterar limite</button>'),
       metricCard("Cache", cache.connected ? "Conectado" : "Indisponível", (cache.keysCount || 0) + " chave(s) · " + (cache.memoryUsage || "0KB")),
     ];
     $("#metricsCards").innerHTML = cards.join("");
@@ -360,6 +374,21 @@ async function autoCreateOne() {
   }
 }
 
+async function saveConcurrency(e) {
+  e.preventDefault();
+  const value = Number(new FormData(e.target).get("maxConcurrent"));
+  try {
+    await api("/api/admin/account-concurrency", {
+      method: "PUT",
+      body: JSON.stringify({ maxConcurrent: value }),
+    });
+    $("#concurrencyDialog").close();
+    loadMetrics();
+  } catch (x) {
+    alert(x.message);
+  }
+}
+
 // Event bindings (no inline handlers for critical actions)
 $("#accountsBtn").addEventListener("click", () => {
   showView("accounts");
@@ -373,12 +402,12 @@ $("#copyBtn").addEventListener("click", () => {
   navigator.clipboard.writeText(currentBaseUrl);
 });
 $("#refreshBtn").addEventListener("click", load);
-$("#metricsRefreshBtn").addEventListener("click", loadMetrics);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
 $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
 $("#addForm").addEventListener("submit", addAccount);
 $("#createForm").addEventListener("submit", createAccount);
+$("#concurrencyForm").addEventListener("submit", saveConcurrency);
 document.querySelectorAll("[data-close]").forEach((btn) => {
   btn.addEventListener("click", () => btn.closest("dialog").close());
 });
@@ -390,8 +419,13 @@ $("#accounts").addEventListener("click", (e) => {
   if (authId) authenticate(authId, t);
   if (removeId) removeAccount(removeId);
 });
+$("#metricsCards").addEventListener("click", (e) => {
+  if (!(e.target instanceof HTMLElement) || e.target.id !== "concurrencyBtn") return;
+  $("#concurrencyInput").value = String($("#concurrencyBtn").closest(".metric-card").querySelector(".metric-value").textContent);
+  $("#concurrencyDialog").showModal();
+});
 
 load();
-setInterval(() => activeView === "metrics" ? loadMetrics() : load(), 5000);
+setInterval(() => activeView === "metrics" ? loadMetrics() : load(), 30000);
 </script>
 </body></html>`;
