@@ -658,6 +658,56 @@ async function loginViaUi(
 
 // ─── Header Capture ───────────────────────────────────────────────────────────
 
+export async function triggerHeaderCaptureRequest(
+  page: Page,
+  hasCaptured: () => boolean,
+): Promise<boolean> {
+  const input = page
+    .locator('textarea:visible, [contenteditable="true"]:visible')
+    .first();
+  const hasInput = await input
+    .isVisible({ timeout: 8_000 })
+    .catch(() => false);
+  if (!hasInput) return false;
+
+  await input.click({ timeout: 5_000 }).catch(() => {});
+  await input.fill("a").catch(async () => {
+    await page.keyboard.type("a", { delay: 40 });
+  });
+  await sleep(800);
+
+  const sendSelectors = [
+    ".message-input-right-button-send .send-button",
+    ".chat-prompt-send-button",
+    "button.send-button",
+    'button[aria-label*="send" i]',
+    'button:has-text("Send")',
+    'button:has-text("Enviar")',
+  ];
+  for (const selector of sendSelectors) {
+    const button = page.locator(selector).first();
+    if (!(await button.isVisible().catch(() => false))) continue;
+
+    await button.click({ timeout: 3_000 }).catch(() => {});
+    await sleep(500);
+    if (hasCaptured()) return true;
+
+    await button
+      .evaluate((element) => {
+        if (element instanceof HTMLElement) element.click();
+      })
+      .catch(() => {});
+    await sleep(500);
+    if (hasCaptured()) return true;
+
+    await input.press("Enter").catch(() => page.keyboard.press("Enter"));
+    return true;
+  }
+
+  await input.press("Enter").catch(() => page.keyboard.press("Enter"));
+  return true;
+}
+
 async function captureHeaders(accountId: string): Promise<void> {
   const page = accountPages.get(accountId);
   if (!page) return;
@@ -690,7 +740,7 @@ async function captureHeaders(accountId: string): Promise<void> {
       const reqHeaders = request.headers();
       const captured = capturedQwenHeaders(reqHeaders);
       if (!captured) {
-        await route.continue().catch(() => {});
+        await route.abort("aborted").catch(() => {});
         return;
       }
 
@@ -719,40 +769,12 @@ async function captureHeaders(accountId: string): Promise<void> {
           });
           await sleep(1500);
 
-          // Prefer UI composer when available, but never hang forever if DOM differs.
-          const inputSelector =
-            'textarea:visible, [contenteditable="true"]:visible';
-          const input = page.locator(inputSelector).first();
-          const hasInput = await input
-            .isVisible({ timeout: 8_000 })
-            .catch(() => false);
+          const submitted = await triggerHeaderCaptureRequest(
+            page,
+            () => Boolean(cache.headers["bx-ua"]),
+          );
 
-          if (hasInput) {
-            await input.click({ timeout: 5_000 }).catch(() => {});
-            await input.fill("a").catch(async () => {
-              await page.keyboard.type("a", { delay: 40 });
-            });
-            await sleep(800);
-
-            const sendSelectors = [
-              ".message-input-right-button-send .send-button",
-              ".chat-prompt-send-button",
-              "button.send-button",
-              'button[aria-label*="send" i]',
-              'button:has-text("Send")',
-              'button:has-text("Enviar")',
-            ];
-            let clicked = false;
-            for (const selector of sendSelectors) {
-              const btn = page.locator(selector).first();
-              if (await btn.isVisible().catch(() => false)) {
-                await btn.click({ force: true, timeout: 3_000 }).catch(() => {});
-                clicked = true;
-                break;
-              }
-            }
-            if (!clicked) await page.keyboard.press("Enter").catch(() => {});
-          } else {
+          if (!submitted) {
             // Fallback: fire a same-origin fetch so the browser attaches bx/cookie headers.
             console.warn(
               `[Playwright] Composer not found for ${accountId}; using fetch fallback for header capture`,

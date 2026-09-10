@@ -1,8 +1,12 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { chromium } from "playwright";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
-import { capturedQwenHeaders } from "../services/playwright.ts";
+import {
+  capturedQwenHeaders,
+  triggerHeaderCaptureRequest,
+} from "../services/playwright.ts";
 
 const originalMockAuth = process.env.TEST_MOCK_QWEN_AUTH;
 const originalQwenAccounts = process.env.QWEN_ACCOUNTS;
@@ -82,6 +86,38 @@ test("auth-playwright: ignores captures without bx-ua", () => {
       "user-agent": "browser",
     },
   );
+});
+
+test("auth-playwright: sends the header probe through a splash overlay", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    let requests = 0;
+    await page.route("https://chat.qwen.ai/api/v2/chat/completions", (route) => {
+      requests += 1;
+      return route.fulfill({ status: 204 });
+    });
+    await page.setContent(`
+      <textarea></textarea>
+      <button class="send-button">Enviar</button>
+      <div style="position:fixed;inset:0;z-index:10">Carregando</div>
+      <script>
+        document.querySelector('.send-button').addEventListener('click', () => {
+          fetch('https://chat.qwen.ai/api/v2/chat/completions', { method: 'POST' });
+        });
+      </script>
+    `);
+
+    const submitted = await triggerHeaderCaptureRequest(
+      page,
+      () => requests > 0,
+    );
+
+    assert.equal(submitted, true);
+    assert.equal(requests, 1);
+  } finally {
+    await browser.close();
+  }
 });
 
 test("auth-playwright: requires configured account outside mock mode", async () => {
