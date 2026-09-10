@@ -11,9 +11,6 @@ button,input{font:inherit}
 .nav button,.ghost{color:#b9c3d7;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 13px;cursor:pointer;transition:.16s ease}
 .nav button.active{color:#fff;border-color:rgba(148,157,255,.35);background:linear-gradient(135deg,rgba(117,133,255,.24),rgba(144,99,228,.20));box-shadow:inset 0 1px rgba(255,255,255,.12)}.nav button:hover,.ghost:hover{color:#fff;background:rgba(255,255,255,.06)}
 .wrap{max-width:1180px;margin:0 auto;padding:34px 28px 48px}
-.status{display:flex;align-items:center;justify-content:space-between;border:1px solid rgba(114,197,139,.25);border-radius:18px;padding:18px 20px;background:linear-gradient(110deg,rgba(30,75,53,.34),rgba(17,24,37,.92) 44%,rgba(30,24,61,.62));box-shadow:var(--shadow);margin-bottom:32px}
-.status-title{display:flex;gap:12px;align-items:center}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(97,209,124,.13),0 0 18px #48a64c}.status strong{font-size:15px}.status .muted{margin-top:3px}
 .muted{color:var(--muted)}
 .actions{display:flex;gap:9px;flex-wrap:wrap}
 .btn{border:1px solid transparent;border-radius:10px;padding:10px 14px;background:linear-gradient(135deg,#56c974,#45ad66);color:#06140b;font-weight:750;cursor:pointer;box-shadow:0 8px 18px rgba(65,177,96,.18);transition:transform .16s ease,filter .16s ease}.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:disabled{cursor:wait;opacity:.7;transform:none}
@@ -40,7 +37,7 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
 .jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(145,160,198,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#b7c2d8;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#b9c7ff;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
-@media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.status{align-items:flex-start;gap:14px;flex-direction:column}.status .btn{width:100%}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.card .meta .btn{flex:1}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
+@media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.card .meta .btn{flex:1}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
 </style></head><body>
 <header class="top">
   <div class="brand"><span class="brand-copy">QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
@@ -50,17 +47,6 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
   </nav>
 </header>
 <main class="wrap">
-  <section class="status">
-    <div class="status-title">
-      <span class="dot"></span>
-      <div>
-        <strong>Servidor local ativo</strong>
-        <div class="muted" id="serverText">Carregando endpoint…</div>
-      </div>
-    </div>
-    <button type="button" class="btn secondary" id="copyBtn">Copiar endpoint</button>
-  </section>
-
   <div id="accountsView">
     <div class="section-head">
       <div>
@@ -152,7 +138,6 @@ input{background:#0b0f14;border:1px solid var(--line);border-radius:8px;color:va
 
 <script>
 const $ = (s) => document.querySelector(s);
-let currentBaseUrl = location.origin + "/v1";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[c]));
@@ -273,9 +258,7 @@ async function load() {
   try {
     const d = await api("/api/admin/overview");
     const base = (d.proxy && d.proxy.baseUrl) || (location.origin + "/v1");
-    currentBaseUrl = base;
     $("#endpoint").textContent = base.endsWith("/v1") ? base.slice(0, -3) : base;
-    $("#serverText").textContent = "Clientes OpenAI e Anthropic podem usar " + base;
 
     const ac = d.autoCreator || {};
     let acText = "auto-create desativado";
@@ -421,9 +404,6 @@ $("#accountsBtn").addEventListener("click", () => {
 $("#metricsBtn").addEventListener("click", () => {
   showView("metrics");
   loadMetrics();
-});
-$("#copyBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText(currentBaseUrl);
 });
 $("#refreshBtn").addEventListener("click", load);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());

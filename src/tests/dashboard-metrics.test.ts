@@ -33,7 +33,9 @@ test("dashboard Métricas renders an in-panel health view", () => {
 test("dashboard omits the obsolete configuration control", () => {
   assert.doesNotMatch(dashboardHtml, /id="configBtn"/);
   assert.doesNotMatch(dashboardHtml, /id="configDialog"/);
-  assert.match(dashboardHtml, /navigator\.clipboard\.writeText\(currentBaseUrl\)/);
+  assert.doesNotMatch(dashboardHtml, /class="status"/);
+  assert.doesNotMatch(dashboardHtml, /id="copyBtn"/);
+  assert.doesNotMatch(dashboardHtml, /id="serverText"/);
 });
 
 test("dashboard groups the pool into responsive account cards", () => {
