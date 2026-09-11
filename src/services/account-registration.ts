@@ -1191,7 +1191,7 @@ async function waitSession(
     }
     // keep solving captcha if it reappears
     if (await detectCaptcha(page)) {
-      await handleCaptcha(page, job, 90_000).catch(() => {});
+      await handleCaptcha(page, job, config.accountCreator.timeoutMs).catch(() => {});
     }
     await sleep(1_200);
   }
@@ -1291,13 +1291,13 @@ async function runRegistration(
       await handleCaptcha(
         page,
         job,
-        Math.min(180_000, config.accountCreator.timeoutMs),
+        config.accountCreator.timeoutMs,
       );
     } else {
       await handleCaptcha(
         page,
         job,
-        Math.min(60_000, config.accountCreator.timeoutMs),
+        config.accountCreator.timeoutMs,
       );
     }
 
@@ -1317,7 +1317,7 @@ async function runRegistration(
       await handleCaptcha(
         page,
         job,
-        Math.min(180_000, config.accountCreator.timeoutMs),
+        config.accountCreator.timeoutMs,
       );
     }
 
@@ -1446,7 +1446,7 @@ async function runRegistration(
         await handleCaptcha(
           page,
           job,
-          Math.min(120_000, config.accountCreator.timeoutMs),
+          config.accountCreator.timeoutMs,
         );
       } else {
         setJob(
