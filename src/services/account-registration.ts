@@ -526,8 +526,23 @@ async function detectCaptcha(page: Page): Promise<boolean> {
 }
 
 async function getManualCaptchaLocator(page: Page): Promise<Locator | undefined> {
-  const captcha = page.locator("#aliyunCaptcha-window-float").first();
-  return (await captcha.isVisible().catch(() => false)) ? captcha : undefined;
+  const selectors = [
+    "#aliyunCaptcha-window-float",
+    'iframe[src*="captcha" i]',
+    'iframe[src*="aliyun" i]',
+    'iframe[src*="nocaptcha" i]',
+    'iframe[src*="recaptcha" i]',
+  ];
+  for (const selector of selectors) {
+    const captcha = page.locator(selector).first();
+    if (await captcha.isVisible().catch(() => false)) return captcha;
+  }
+
+  if (await pageShowsAccessVerification(page)) {
+    const viewport = page.locator("body").first();
+    if (await viewport.isVisible().catch(() => false)) return viewport;
+  }
+  return undefined;
 }
 
 function manualCaptchaError(message: string): Error {
@@ -637,10 +652,12 @@ export async function waitForManualCaptcha(
     submitting: false,
   };
   manualCaptchaSessions.set(job.id, session);
-  if (!(await session.captcha.isVisible().catch(() => false))) {
+  const captcha = await getManualCaptchaLocator(page);
+  if (!captcha) {
     manualCaptchaSessions.delete(job.id);
     return;
   }
+  session.captcha = captcha;
   setJob(
     job,
     "solving-captcha",
@@ -1220,7 +1237,7 @@ async function runRegistration(
       "opening-browser",
       headless
         ? "Abrindo navegador headless (pode falhar no CAPTCHA/Access Verification)…"
-        : "Abrindo navegador visível — resolva o CAPTCHA se aparecer; depois o link do e-mail é clicado automático…",
+        : "Abrindo navegador do cadastro — se houver CAPTCHA, ele aparecerá no painel; depois o link do e-mail é clicado automático…",
     );
     context = await chromium.launchPersistentContext(profilePath, {
       headless,
@@ -1308,7 +1325,7 @@ async function runRegistration(
     // or we are already authenticated. Headless often dies at Access Verification with no email sent.
     if (await pageShowsAccessVerification(page)) {
       throw new Error(
-        "Qwen bloqueou com Access Verification (CAPTCHA). Em headless o e-mail NÃO é enviado. Use ACCOUNT_CREATOR_HEADED=true e resolva o captcha.",
+        "Qwen manteve o CAPTCHA após a tentativa no painel. Abra o desafio novamente e tente outro arraste.",
       );
     }
 
@@ -1354,7 +1371,7 @@ async function runRegistration(
         if (await pageLooksAuthenticated(page)) break;
         if (await pageShowsAccessVerification(page)) {
           throw new Error(
-            "Access Verification apareceu após o envio. Resolva o CAPTCHA (prefira ACCOUNT_CREATOR_HEADED=true).",
+            "Access Verification apareceu após o envio. Resolva o CAPTCHA pelo painel.",
           );
         }
         await sleep(1_500);

@@ -28,6 +28,7 @@ button,input{font:inherit}
 .error{color:var(--red);margin-top:6px}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);padding:0;width:min(460px,92vw)}
 dialog::backdrop{background:rgba(0,0,0,.55)}
+#captchaDialog{width:min(1100px,96vw)}
 .modal{padding:18px}
 .modal h3{margin:0 0 6px}
 .fields{display:grid;gap:12px;margin:16px 0}
