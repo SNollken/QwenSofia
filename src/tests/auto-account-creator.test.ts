@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { chromium } from "playwright";
 import { solveAliyunPuzzleCaptcha } from "../services/aliyun-captcha-solver.ts";
+import { adminApp } from "../api/admin.ts";
 import {
   acceptRegistrationTerms,
   clickSignupSwitch,
@@ -9,6 +10,8 @@ import {
   fillByName,
   openSignupAndFill,
   resubmitRegistrationAfterCaptcha,
+  waitForManualCaptcha,
+  type RegistrationJob,
 } from "../services/account-registration.ts";
 import { getDatabase } from "../core/database.ts";
 import { invalidateAccountsCache } from "../core/accounts.ts";
@@ -382,6 +385,99 @@ test("AutoCreator: follows the logical puzzle position while its visual position
     });
 
     assert.equal(result.ok, true, JSON.stringify({ result, statuses }));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("AutoCreator: pauses for a CAPTCHA trajectory submitted through the panel", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <style>
+        #aliyunCaptcha-window-float { width: 300px; }
+        #aliyunCaptcha-img-box { position: relative; width: 300px; height: 200px; }
+        #aliyunCaptcha-img { position: absolute; width: 300px; height: 200px; }
+        #aliyunCaptcha-puzzle { position: absolute; left: 0; width: 52px; height: 200px; }
+        #aliyunCaptcha-sliding-body { position: relative; width: 300px; height: 40px; }
+        #aliyunCaptcha-sliding-slider { position: absolute; left: 0; width: 40px; height: 40px; }
+      </style>
+      <div id="aliyunCaptcha-window-float">
+        <div>Access Verification</div>
+        <div id="aliyunCaptcha-img-box">
+          <svg id="aliyunCaptcha-img" width="300" height="200"></svg>
+          <svg id="aliyunCaptcha-puzzle" width="52" height="200"></svg>
+        </div>
+        <div id="aliyunCaptcha-sliding-body">
+          <div id="aliyunCaptcha-sliding-slider"></div>
+        </div>
+      </div>
+      <script>
+        const slider = document.querySelector('#aliyunCaptcha-sliding-slider');
+        const puzzle = document.querySelector('#aliyunCaptcha-puzzle');
+        let dragging = false;
+        let startX = 0;
+        slider.addEventListener('mousedown', (event) => {
+          dragging = true;
+          startX = event.clientX;
+        });
+        document.addEventListener('mousemove', (event) => {
+          if (!dragging) return;
+          const handleLeft = Math.max(0, Math.min(260, event.clientX - startX));
+          slider.style.left = handleLeft + 'px';
+          puzzle.style.left = (handleLeft * 248 / 260) + 'px';
+        });
+        document.addEventListener('mouseup', () => {
+          if (!dragging) return;
+          dragging = false;
+          const puzzleLeft = parseFloat(puzzle.style.left) || 0;
+          if (Math.abs(puzzleLeft - 150) <= 2) document.body.textContent = 'verified';
+        });
+      </script>
+    `);
+
+    const now = Date.now();
+    const job: RegistrationJob = {
+      id: "manual-captcha-job",
+      email: "manual@example.test",
+      state: "solving-captcha",
+      message: "",
+      createdAt: now,
+      updatedAt: now,
+      ready: false,
+    };
+    const waiting = waitForManualCaptcha(page, job, 10_000);
+    const screenshotResponse = await adminApp.fetch(
+      new Request(
+        `http://localhost/api/admin/registrations/${job.id}/captcha`,
+      ),
+    );
+    assert.strictEqual(screenshotResponse.status, 200);
+    assert.strictEqual(screenshotResponse.headers.get("cache-control"), "no-store");
+    assert.ok((await screenshotResponse.arrayBuffer()).byteLength > 100);
+
+    const dragResponse = await adminApp.fetch(
+      new Request(
+        `http://localhost/api/admin/registrations/${job.id}/captcha/drag`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            points: [
+              { x: 0.047, y: 0.917, t: 0 },
+              { x: 0.2, y: 0.913, t: 80 },
+              { x: 0.4, y: 0.92, t: 170 },
+              { x: 0.571, y: 0.917, t: 260 },
+            ],
+          }),
+        },
+      ),
+    );
+    assert.strictEqual(dragResponse.status, 202);
+    await waiting;
+
+    assert.match(await page.locator("body").innerText(), /verified/i);
   } finally {
     await browser.close();
   }

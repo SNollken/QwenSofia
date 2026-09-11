@@ -24,7 +24,7 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https
 - **Provider público** — O endpoint `/v1/models` identifica o modelo como `QwenSofia` no campo `owned_by`.
 - **Múltiplas contas** — Rotação round-robin, cooldown automático e inicialização paralela.
 - **Aplicação de gerenciamento** — Painel local (`/`) e janela desktop para listar, adicionar, autenticar, remover e acompanhar contas.
-- **Cadastro assistido** — Preenche o cadastro do Qwen, aguarda a verificação humana e incorpora a sessão confirmada ao pool.
+- **Cadastro assistido** — Preenche o cadastro do Qwen, mostra o CAPTCHA no painel para a verificação humana e incorpora a sessão confirmada ao pool.
 - **Criação automática de contas (dependente do upstream)** — Quando todas as contas ficam indisponíveis, tenta criar e autenticar uma nova conta. O resultado depende do fluxo atual do Qwen, CAPTCHA e e-mail temporário.
 - **Auto-auth no pool** — Contas adicionadas/criadas pelo painel ou API entram autenticadas no pool (Playwright).
 - **Persistência de sessão** — Cookies/JWT do Qwen persistidos por conta no SQLite.
@@ -198,7 +198,7 @@ npm run desktop
 | **Autenticar / Remover** | Revalida sessão ou remove conta + perfil local |
 | **Configuração** | Base URL, API key e `ADMIN_TOKEN` opcional |
 
-CAPTCHA e confirmação de e-mail, quando exigidos pelo Qwen, devem ser concluídos manualmente na janela do browser. Depois disso a conta é autenticada e inserida no pool automaticamente.
+Quando exigido pelo Qwen, o CAPTCHA aparece no painel: arraste a peça na imagem e o navegador do cadastro recebe sua trajetória. A confirmação de e-mail segue automática para caixas temporárias. Depois disso a conta é autenticada e inserida no pool automaticamente.
 
 ### Auto-create no rate limit (experimental)
 
@@ -207,11 +207,11 @@ Quando o pool inteiro está em cooldown/rate limit (ou não há contas):
 1. O proxy **não força** limpar cooldowns (com auto-create ativo)
 2. Dispara o criador automático **completo**
 3. Gera um e-mail temporário e preenche o cadastro no Qwen
-4. Tenta resolver/apresentar CAPTCHA, verificar o e-mail e capturar cookies/sessão
+4. Pausa no CAPTCHA atual e o apresenta no painel para o arraste manual; depois verifica o e-mail e captura cookies/sessão
 5. Só marca `ready=true` depois do Playwright do pool autenticar de verdade
 6. **Retenta a request** com a conta nova
 
-Esse fluxo não é garantido: mudanças no site do Qwen, bloqueios anti-bot, indisponibilidade do provedor de e-mail ou CAPTCHA podem interrompê-lo. O cadastro abre o browser visível por padrão para permitir intervenção humana. A conta **não** entra no pool até uma sessão autenticada ser capturada.
+Esse fluxo não é garantido: mudanças no site do Qwen, bloqueios anti-bot, indisponibilidade do provedor de e-mail ou CAPTCHA podem interrompê-lo. Se houver CAPTCHA, o job fica aguardando no painel até o arraste humano. A conta **não** entra no pool até uma sessão autenticada ser capturada.
 
 Desative com `ACCOUNT_CREATOR_ENABLED=false`.
 
@@ -293,7 +293,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | `ACCOUNT_CREATOR_COOLDOWN_MS` | `30000` | Intervalo mínimo entre criações automáticas. |
 | `ACCOUNT_CREATOR_MAX_BATCH` | `5` | Máximo de contas por chamada manual/batch. |
 | `ACCOUNT_CREATOR_AUTO_AUTH` | `true` | Autentica automaticamente ao adicionar conta via admin/API. |
-| `ACCOUNT_CREATOR_FORCE_HEADLESS` | `false` | Força headless no cadastro, que usa browser visível por padrão; pode falhar diante de CAPTCHA. |
+| `ACCOUNT_CREATOR_FORCE_HEADLESS` | `false` | Força headless no cadastro; o CAPTCHA continua apresentado no painel, mas o upstream pode recusá-lo. |
 
 ### Timeouts
 
@@ -406,6 +406,8 @@ O projeto não implementa `/v1/completions` (Completions legacy). O estado de `p
 | `/api/admin/accounts/:id/authenticate` | POST | Reautentica conta no Playwright |
 | `/api/admin/registrations` | POST | Cadastro assistido com e-mail/senha informados |
 | `/api/admin/registrations/:id` | GET | Status do job de cadastro |
+| `/api/admin/registrations/:id/captcha` | GET | Imagem PNG sem cache do CAPTCHA aguardando no job |
+| `/api/admin/registrations/:id/captcha/drag` | POST | Envia a trajetória normalizada do arraste (`{"points":[{"x":0,"y":0,"t":0}]}`) |
 | `/api/admin/account-creator` | GET | Status do criador automático |
 | `/api/admin/account-creator/run` | POST | Cria N contas automáticas (`{"count":1}`; `?wait=1` espera o fim) |
 

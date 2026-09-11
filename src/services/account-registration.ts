@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import {
+  chromium,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "playwright";
 import { addAccount, removeAccount } from "../core/accounts.ts";
 import { config } from "../core/config.ts";
 import {
@@ -22,7 +27,7 @@ import {
 } from "./temp-mail.ts";
 import {
   isAccessVerificationVisible,
-  solveAliyunPuzzleCaptcha,
+  isCaptchaFailed,
 } from "./aliyun-captcha-solver.ts";
 
 export type RegistrationState =
@@ -61,7 +66,25 @@ export interface RegistrationRequest {
   useTempEmail?: boolean;
 }
 
+export interface ManualCaptchaPoint {
+  x: number;
+  y: number;
+  t: number;
+}
+
+export interface ManualCaptchaDrag {
+  points: ManualCaptchaPoint[];
+}
+
+type ManualCaptchaSession = {
+  captcha: Locator;
+  page: Page;
+  submittedAt?: number;
+  submitting: boolean;
+};
+
 const jobs = new Map<string, RegistrationJob>();
+const manualCaptchaSessions = new Map<string, ManualCaptchaSession>();
 const MAX_JOB_AGE_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -502,6 +525,168 @@ async function detectCaptcha(page: Page): Promise<boolean> {
   return false;
 }
 
+async function getManualCaptchaLocator(page: Page): Promise<Locator | undefined> {
+  const captcha = page.locator("#aliyunCaptcha-window-float").first();
+  return (await captcha.isVisible().catch(() => false)) ? captcha : undefined;
+}
+
+function manualCaptchaError(message: string): Error {
+  return new Error(`CAPTCHA manual: ${message}`);
+}
+
+function validateManualCaptchaDrag(input: ManualCaptchaDrag): void {
+  if (!Array.isArray(input.points) || input.points.length < 2) {
+    throw manualCaptchaError("envie ao menos dois pontos do arraste.");
+  }
+  if (input.points.length > 80) {
+    throw manualCaptchaError("o arraste excede 80 pontos.");
+  }
+
+  let previousTime = -1;
+  for (const point of input.points) {
+    if (
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y) ||
+      !Number.isFinite(point.t) ||
+      point.x < 0 ||
+      point.x > 1 ||
+      point.y < 0 ||
+      point.y > 1 ||
+      point.t < previousTime ||
+      point.t > 15_000
+    ) {
+      throw manualCaptchaError("a trajetória recebida é inválida.");
+    }
+    previousTime = point.t;
+  }
+}
+
+function getManualCaptchaSession(jobId: string): ManualCaptchaSession {
+  const session = manualCaptchaSessions.get(jobId);
+  if (!session || session.page.isClosed()) {
+    manualCaptchaSessions.delete(jobId);
+    throw manualCaptchaError("não há desafio aguardando neste cadastro.");
+  }
+  return session;
+}
+
+export async function getManualCaptchaScreenshot(jobId: string): Promise<Buffer> {
+  const session = getManualCaptchaSession(jobId);
+  if (!(await session.captcha.isVisible().catch(() => false))) {
+    throw manualCaptchaError("o desafio atual não está mais visível.");
+  }
+  return session.captcha.screenshot({ type: "png" });
+}
+
+export async function submitManualCaptchaDrag(
+  jobId: string,
+  input: ManualCaptchaDrag,
+): Promise<void> {
+  validateManualCaptchaDrag(input);
+  const session = getManualCaptchaSession(jobId);
+  if (session.submitting) {
+    throw manualCaptchaError("o arraste anterior ainda está sendo enviado.");
+  }
+
+  const box = await session.captcha.boundingBox();
+  if (!box) throw manualCaptchaError("o desafio atual não está mais visível.");
+
+  session.submitting = true;
+  let mouseDown = false;
+  try {
+    const toPagePoint = (point: ManualCaptchaPoint) => ({
+      x: box.x + point.x * box.width,
+      y: box.y + point.y * box.height,
+    });
+    const first = toPagePoint(input.points[0]);
+    await session.page.mouse.move(first.x, first.y);
+    await session.page.mouse.down();
+    mouseDown = true;
+
+    let previousTime = input.points[0].t;
+    for (const point of input.points.slice(1)) {
+      const waitMs = Math.max(0, point.t - previousTime);
+      if (waitMs) await sleep(waitMs);
+      const next = toPagePoint(point);
+      await session.page.mouse.move(next.x, next.y);
+      previousTime = point.t;
+    }
+    await session.page.mouse.up();
+    mouseDown = false;
+    session.submittedAt = Date.now();
+  } finally {
+    if (mouseDown && !session.page.isClosed()) {
+      await session.page.mouse.up().catch(() => {});
+    }
+    session.submitting = false;
+  }
+}
+
+export async function waitForManualCaptcha(
+  page: Page,
+  job: RegistrationJob,
+  timeoutMs: number,
+): Promise<void> {
+  if (manualCaptchaSessions.has(job.id)) {
+    throw manualCaptchaError("já há um desafio aguardando neste cadastro.");
+  }
+
+  const session: ManualCaptchaSession = {
+    captcha: page.locator("#aliyunCaptcha-window-float").first(),
+    page,
+    submitting: false,
+  };
+  manualCaptchaSessions.set(job.id, session);
+  if (!(await session.captcha.isVisible().catch(() => false))) {
+    manualCaptchaSessions.delete(job.id);
+    return;
+  }
+  setJob(
+    job,
+    "solving-captcha",
+    "CAPTCHA aparece aqui no painel. Arraste a peça para continuar o cadastro automático.",
+  );
+
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while (Date.now() < deadline) {
+      if (page.isClosed()) throw manualCaptchaError("o navegador do cadastro foi fechado.");
+      if (await pageShowsActivationPending(page)) {
+        setJob(job, "pending_activation", "CAPTCHA aceito. Confirmação de e-mail aberta.");
+        return;
+      }
+      if (await pageLooksAuthenticated(page)) return;
+
+      const currentCaptcha = await getManualCaptchaLocator(page);
+      if (!currentCaptcha) {
+        await sleep(500);
+        if (!(await getManualCaptchaLocator(page))) {
+          setJob(job, "filling-form", "CAPTCHA aceito. Continuando cadastro automático.");
+          return;
+        }
+      } else {
+        session.captcha = currentCaptcha;
+      }
+
+      if (session.submittedAt && (await isCaptchaFailed(page))) {
+        session.submittedAt = undefined;
+        setJob(
+          job,
+          "solving-captcha",
+          "CAPTCHA recusado. O desafio atualizado está no painel; tente novamente.",
+        );
+      }
+      await sleep(350);
+    }
+  } finally {
+    if (manualCaptchaSessions.get(job.id) === session) {
+      manualCaptchaSessions.delete(job.id);
+    }
+  }
+
+  throw manualCaptchaError("não foi resolvido no painel a tempo.");
+}
+
 async function handleCaptcha(
   page: Page,
   job: RegistrationJob,
@@ -514,92 +699,7 @@ async function handleCaptcha(
     (await pageShowsAccessVerification(page));
   if (!visible) return;
 
-  setJob(
-    job,
-    "solving-captcha",
-    "CAPTCHA/Access Verification detectado — resolvendo quebra-cabeça (sem arraste aleatório)…",
-  );
-
-  const deadline = Date.now() + timeoutMs;
-  let attemptRound = 0;
-
-  while (Date.now() < deadline) {
-    if (await pageShowsActivationPending(page)) {
-      setJob(
-        job,
-        "pending_activation",
-        "CAPTCHA ok — tela de confirmação de e-mail aberta.",
-      );
-      return;
-    }
-    if (await pageLooksAuthenticated(page)) return;
-
-    const stillThere =
-      (await isAccessVerificationVisible(page)) ||
-      (await pageShowsAccessVerification(page)) ||
-      (await detectCaptcha(page));
-    if (!stillThere) {
-      await sleep(800);
-      if (
-        !(await isAccessVerificationVisible(page)) &&
-        !(await detectCaptcha(page))
-      ) {
-        setJob(job, "filling-form", "CAPTCHA/verificação sumiu.");
-        return;
-      }
-    }
-
-    attemptRound += 1;
-    // One focused solve on the captcha currently on screen (no refresh/reload).
-    const result = await solveAliyunPuzzleCaptcha(page, {
-      maxAttempts: 4,
-      onAttempt: ({ attempt, offsetPx, confidence, status }) => {
-        setJob(
-          job,
-          "solving-captcha",
-          `Captcha atual r${attemptRound}.${attempt}: ${status}${
-            offsetPx != null ? ` · ${offsetPx}px` : ""
-          }${confidence != null ? ` · conf ${(confidence * 100).toFixed(0)}%` : ""}`,
-        );
-      },
-    });
-
-    if (result.ok) {
-      await sleep(800);
-      if (await pageShowsActivationPending(page)) {
-        setJob(
-          job,
-          "pending_activation",
-          `CAPTCHA resolvido em ${result.attempts} arraste(s) no captcha atual.`,
-        );
-        return;
-      }
-      if (await pageLooksAuthenticated(page)) return;
-      if (
-        !(await isAccessVerificationVisible(page)) &&
-        !(await pageShowsAccessVerification(page))
-      ) {
-        setJob(
-          job,
-          "filling-form",
-          `CAPTCHA resolvido (offset=${result.offsetPx ?? "?"}px).`,
-        );
-        return;
-      }
-    }
-
-    // Do not refresh. Brief pause and try again only if the same/new captcha is still visible.
-    setJob(
-      job,
-      "solving-captcha",
-      `Ainda no captcha atual (${result.error || "retry"}). Re-capturando a tela sem recarregar…`,
-    );
-    await sleep(900);
-  }
-
-  throw new Error(
-    "CAPTCHA atual não resolvido a tempo (sem recarregar a imagem). Tente criar a conta novamente.",
-  );
+  await waitForManualCaptcha(page, job, timeoutMs);
 }
 
 export async function acceptRegistrationTerms(page: Page): Promise<void> {

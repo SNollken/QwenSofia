@@ -66,6 +66,14 @@ test("dashboard offers a confirmed bulk authentication action", () => {
   assert.match(dashboardHtml, /uma por vez/);
 });
 
+test("dashboard opens an interactive CAPTCHA for automatic account creation", () => {
+  assert.match(dashboardHtml, /id="captchaDialog"/);
+  assert.match(dashboardHtml, /data-captcha=/);
+  assert.match(dashboardHtml, /captcha\/drag/);
+  assert.match(dashboardHtml, /pointermove/);
+  assert.match(dashboardHtml, /CAPTCHA aparece aqui no painel/);
+});
+
 test("dashboard uses a black-cherry pink palette", () => {
   assert.match(dashboardHtml, /--bg:#09090b;.*--accent-start:#e85b94;--accent-end:#ff92bd/);
   assert.match(

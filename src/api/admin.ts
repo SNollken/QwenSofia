@@ -17,9 +17,12 @@ import {
   initPlaywrightForAccount,
 } from "../services/playwright.ts";
 import {
+  getManualCaptchaScreenshot,
   getRegistrationJob,
   listRegistrationJobs,
   startRegistration,
+  submitManualCaptchaDrag,
+  type ManualCaptchaDrag,
 } from "../services/account-registration.ts";
 import {
   createAccountsManually,
@@ -230,6 +233,38 @@ adminApp.post("/api/admin/registrations", async (c) => {
 adminApp.get("/api/admin/registrations/:id", (c) => {
   const job = getRegistrationJob(c.req.param("id"));
   return job ? c.json(job) : c.json({ error: "Cadastro não encontrado" }, 404);
+});
+
+adminApp.get("/api/admin/registrations/:id/captcha", async (c) => {
+  try {
+    const screenshot = await getManualCaptchaScreenshot(c.req.param("id"));
+    return new Response(new Uint8Array(screenshot), {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "image/png",
+      },
+    });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      409,
+    );
+  }
+});
+
+adminApp.post("/api/admin/registrations/:id/captcha/drag", async (c) => {
+  const body = await c.req
+    .json<ManualCaptchaDrag>()
+    .catch(() => ({ points: [] }));
+  try {
+    await submitManualCaptchaDrag(c.req.param("id"), body);
+    return c.json({ ok: true }, 202);
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      409,
+    );
+  }
 });
 
 adminApp.get("/api/admin/account-creator", (c) => c.json(getAutoCreateStatus()));

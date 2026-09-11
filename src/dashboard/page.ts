@@ -35,6 +35,7 @@ label{display:grid;gap:6px;color:var(--muted)}
 input{background:#151118;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:10px 12px}input:focus{outline:0;border-color:#ff8fba;box-shadow:0 0 0 3px rgba(232,91,148,.14)}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px}
 .notice{border:1px solid #3a3320;background:#1a160c;color:#e6d39a;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px}
+.captcha-stage{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#111;margin:16px 0}.captcha-stage img{display:block;width:100%;touch-action:none;user-select:none;cursor:grab}.captcha-stage img.dragging{cursor:grabbing}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
 .jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(202,164,188,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#d2c6d1;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#ffadd0;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
@@ -130,12 +131,25 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
       <label>E-mail que você controla<input name="email" type="email" required></label>
       <label>Senha (mínimo 8 caracteres)<input name="password" type="password" minlength="8" required></label>
     </div>
-    <div class="notice">CAPTCHA e confirmação de e-mail, quando exigidos, precisam ser concluídos por você na janela do navegador.</div>
+    <div class="notice">Quando o Qwen pedir CAPTCHA, ele aparece neste painel para você arrastar a peça. O restante continua automático.</div>
     <div class="modal-actions">
       <button type="button" class="ghost" data-close>Cancelar</button>
       <button class="btn">Iniciar criação</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="captchaDialog">
+  <div class="modal">
+    <h3>Resolver CAPTCHA</h3>
+    <div class="muted" id="captchaStatus">Carregando o desafio atual…</div>
+    <div class="captcha-stage"><img id="captchaImage" alt="CAPTCHA atual do cadastro" draggable="false"></div>
+    <div class="notice">CAPTCHA aparece aqui no painel. Arraste a peça na imagem para retomar o cadastro automático.</div>
+    <div class="modal-actions">
+      <button type="button" class="ghost" id="captchaRefreshBtn">Atualizar imagem</button>
+      <button type="button" class="ghost" id="captchaCloseBtn">Fechar</button>
+    </div>
+  </div>
 </dialog>
 
 <script>
@@ -194,6 +208,9 @@ function jobCard(j) {
       : (j.state === 'pending_activation'
         ? 'cool'
         : (j.state === 'completed' ? 'cool' : '')));
+  const captchaAction = j.state === 'solving-captcha'
+    ? '<button type="button" class="btn secondary" data-captcha="' + esc(j.id) + '">Resolver CAPTCHA</button>'
+    : '';
   return (
     '<article class="card job">' +
       "<div><strong>" + esc(j.email) + '</strong><div class="muted">' + esc(j.message) + "</div>" +
@@ -201,7 +218,7 @@ function jobCard(j) {
       (j.verificationCode ? '<div class="muted">código: ' + esc(j.verificationCode) + '</div>' : '') +
       (j.error ? '<div class="error">' + esc(j.error) + "</div>" : "") +
       "</div>" +
-      '<span class="badge ' + badgeClass + '">' + esc(j.state) + ready + "</span>" +
+      '<div class="meta">' + captchaAction + '<span class="badge ' + badgeClass + '">' + esc(j.state) + ready + "</span></div>" +
     "</article>"
   );
 }
@@ -218,6 +235,125 @@ function metricCard(label, value, detail, action = "") {
 }
 
 let activeView = "accounts";
+let captchaJobId = "";
+let captchaPoints = [];
+let captchaPointerId = null;
+let captchaStartedAt = 0;
+let captchaImageUrl = "";
+let captchaRefreshTimer = null;
+let captchaSubmitting = false;
+
+function setCaptchaStatus(message) {
+  $("#captchaStatus").textContent = message;
+}
+
+function clearCaptchaImage() {
+  if (captchaImageUrl) URL.revokeObjectURL(captchaImageUrl);
+  captchaImageUrl = "";
+  $("#captchaImage").removeAttribute("src");
+}
+
+function resetCaptchaDialog() {
+  if (captchaRefreshTimer) clearInterval(captchaRefreshTimer);
+  captchaRefreshTimer = null;
+  captchaJobId = "";
+  captchaPoints = [];
+  captchaPointerId = null;
+  captchaSubmitting = false;
+  $("#captchaImage").classList.remove("dragging");
+  clearCaptchaImage();
+}
+
+function closeCaptchaDialog() {
+  const dialog = $("#captchaDialog");
+  if (dialog.open) dialog.close();
+  else resetCaptchaDialog();
+}
+
+async function loadCaptchaImage() {
+  const jobId = captchaJobId;
+  if (!jobId || captchaSubmitting || captchaPointerId !== null) return;
+  try {
+    const response = await fetch(
+      "/api/admin/registrations/" + encodeURIComponent(jobId) + "/captcha",
+      { cache: "no-store" },
+    );
+    if (jobId !== captchaJobId) return;
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setCaptchaStatus(data.error || "O desafio não está mais disponível.");
+      return;
+    }
+    const nextUrl = URL.createObjectURL(await response.blob());
+    if (jobId !== captchaJobId) {
+      URL.revokeObjectURL(nextUrl);
+      return;
+    }
+    clearCaptchaImage();
+    captchaImageUrl = nextUrl;
+    $("#captchaImage").src = nextUrl;
+    setCaptchaStatus("Arraste a peça sobre a posição correta.");
+  } catch (error) {
+    setCaptchaStatus(error.message || "Não foi possível carregar o desafio.");
+  }
+}
+
+function openCaptchaDialog(jobId) {
+  resetCaptchaDialog();
+  captchaJobId = jobId;
+  $("#captchaDialog").showModal();
+  loadCaptchaImage();
+  captchaRefreshTimer = setInterval(loadCaptchaImage, 5_000);
+}
+
+function captchaPoint(event) {
+  const rect = $("#captchaImage").getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    t: Date.now() - captchaStartedAt,
+  };
+}
+
+function recordCaptchaPoint(event) {
+  const point = captchaPoint(event);
+  const previous = captchaPoints[captchaPoints.length - 1];
+  if (
+    !previous ||
+    point.t - previous.t >= 16 ||
+    Math.abs(point.x - previous.x) >= 0.004 ||
+    Math.abs(point.y - previous.y) >= 0.004
+  ) {
+    if (captchaPoints.length < 80) captchaPoints.push(point);
+  }
+}
+
+async function submitCaptchaDrag() {
+  const jobId = captchaJobId;
+  if (!jobId || captchaPoints.length < 2) {
+    setCaptchaStatus("Arraste a peça até a posição desejada.");
+    return;
+  }
+  captchaSubmitting = true;
+  setCaptchaStatus("Enviando o seu arraste para o CAPTCHA…");
+  try {
+    await api(
+      "/api/admin/registrations/" + encodeURIComponent(jobId) + "/captcha/drag",
+      { method: "POST", body: JSON.stringify({ points: captchaPoints }) },
+    );
+    setCaptchaStatus("Verificando o CAPTCHA…");
+    setTimeout(() => {
+      if (captchaJobId === jobId) loadCaptchaImage();
+    }, 700);
+    setTimeout(load, 800);
+  } catch (error) {
+    setCaptchaStatus(error.message || "O arraste não pôde ser enviado.");
+  } finally {
+    captchaSubmitting = false;
+    captchaPoints = [];
+    $("#captchaImage").classList.remove("dragging");
+  }
+}
 
 function showView(view) {
   activeView = view;
@@ -272,6 +408,12 @@ async function load() {
     $("#jobs").innerHTML = registrations.length
       ? registrations.map(jobCard).join("")
       : '<div class="empty">Nenhum cadastro executado neste runtime.</div>';
+    if (
+      captchaJobId &&
+      !registrations.some((job) => job.id === captchaJobId && job.state === "solving-captcha")
+    ) {
+      closeCaptchaDialog();
+    }
   } catch (e) {
     $("#summary").innerHTML = '<span class="error">' + esc(e.message) + "</span>";
     $("#accounts").innerHTML =
@@ -355,7 +497,7 @@ async function removeAccount(id) {
 
 async function autoCreateOne() {
   const ok = confirm(
-    "Criar 1 conta automática (email/senha aleatórios), autenticar e adicionar ao pool? Se o Qwen pedir CAPTCHA/verificação de e-mail, conclua na janela do navegador."
+    "Criar 1 conta automática (email/senha aleatórios), autenticar e adicionar ao pool? Se o Qwen pedir CAPTCHA, ele aparecerá neste painel para você resolver; depois o restante continua automático."
   );
   if (!ok) return;
   try {
@@ -432,6 +574,9 @@ $("#authAllBtn").addEventListener("click", authenticateAll);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
 $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
+$("#captchaRefreshBtn").addEventListener("click", loadCaptchaImage);
+$("#captchaCloseBtn").addEventListener("click", closeCaptchaDialog);
+$("#captchaDialog").addEventListener("close", resetCaptchaDialog);
 $("#addForm").addEventListener("submit", addAccount);
 $("#createForm").addEventListener("submit", createAccount);
 $("#concurrencyForm").addEventListener("submit", saveConcurrency);
@@ -446,6 +591,40 @@ $("#accounts").addEventListener("click", (e) => {
   const removeId = t.getAttribute("data-remove");
   if (authId) authenticate(authId, t);
   if (removeId) removeAccount(removeId);
+});
+$("#jobs").addEventListener("click", (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  const captchaId = target.getAttribute("data-captcha");
+  if (captchaId) openCaptchaDialog(captchaId);
+});
+$("#captchaImage").addEventListener("pointerdown", (event) => {
+  if (!captchaJobId || captchaSubmitting || !event.currentTarget.src) return;
+  event.preventDefault();
+  captchaPointerId = event.pointerId;
+  captchaStartedAt = Date.now();
+  captchaPoints = [];
+  recordCaptchaPoint(event);
+  event.currentTarget.setPointerCapture(event.pointerId);
+  event.currentTarget.classList.add("dragging");
+});
+$("#captchaImage").addEventListener("pointermove", (event) => {
+  if (event.pointerId !== captchaPointerId) return;
+  recordCaptchaPoint(event);
+});
+$("#captchaImage").addEventListener("pointerup", async (event) => {
+  if (event.pointerId !== captchaPointerId) return;
+  recordCaptchaPoint(event);
+  event.currentTarget.releasePointerCapture(event.pointerId);
+  captchaPointerId = null;
+  await submitCaptchaDrag();
+});
+$("#captchaImage").addEventListener("pointercancel", (event) => {
+  if (event.pointerId !== captchaPointerId) return;
+  captchaPointerId = null;
+  captchaPoints = [];
+  event.currentTarget.classList.remove("dragging");
+  setCaptchaStatus("Arraste cancelado. Tente novamente.");
 });
 $("#metricsCards").addEventListener("click", (e) => {
   if (!(e.target instanceof HTMLElement) || e.target.id !== "concurrencyBtn") return;
