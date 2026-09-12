@@ -390,7 +390,7 @@ test("AutoCreator: follows the logical puzzle position while its visual position
   }
 });
 
-test("AutoCreator: streams a CAPTCHA drag while the panel keeps capturing it", async () => {
+test("AutoCreator: streams a CAPTCHA drag started over the puzzle image", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -470,8 +470,8 @@ test("AutoCreator: streams a CAPTCHA drag while the panel keeps capturing it", a
         ),
       );
 
-    assert.strictEqual((await pointerRequest("start", 0.047)).status, 202);
-    assert.strictEqual((await pointerRequest("move", 0.4)).status, 202);
+    assert.strictEqual((await pointerRequest("start", 0.2)).status, 202);
+    assert.strictEqual((await pointerRequest("move", 0.55)).status, 202);
 
     const liveScreenshotResponse = await adminApp.fetch(
       new Request(
@@ -491,7 +491,7 @@ test("AutoCreator: streams a CAPTCHA drag while the panel keeps capturing it", a
       ) > 50,
     );
 
-    assert.strictEqual((await pointerRequest("end", 0.571)).status, 202);
+    assert.strictEqual((await pointerRequest("end", 0.724)).status, 202);
     await waiting;
 
     assert.match(await page.locator("body").innerText(), /verified/i);

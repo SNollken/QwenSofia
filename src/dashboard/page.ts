@@ -145,7 +145,7 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
     <h3>Resolver CAPTCHA</h3>
     <div class="muted" id="captchaStatus">Carregando o desafio atual…</div>
     <div class="captcha-stage"><img id="captchaImage" alt="CAPTCHA atual do cadastro" draggable="false"></div>
-    <div class="notice">CAPTCHA aparece aqui no painel e acompanha o movimento enquanto você arrasta a peça.</div>
+    <div class="notice">Clique e arraste a peça ou o botão roxo. O painel segura o controle correto e acompanha o movimento.</div>
     <div class="modal-actions">
       <button type="button" class="ghost" id="captchaCloseBtn">Fechar</button>
     </div>
@@ -318,7 +318,7 @@ async function loadCaptchaImage() {
     setCaptchaStatus(
       captchaPointerId !== null
         ? "Movimento ao vivo: continue arrastando até encaixar a peça."
-        : "Arraste a peça sobre a posição correta. Atualização automática ativa.",
+        : "Clique e arraste a peça ou o botão roxo até o encaixe. Atualização automática ativa.",
     );
   } catch (error) {
     setCaptchaStatus(error.message || "Não foi possível carregar o desafio.");

@@ -94,6 +94,8 @@ type ManualCaptchaSession = {
   submittedAt?: number;
   submitting: boolean;
   pointerBox?: ManualCaptchaBox;
+  pointerInputStart?: { x: number; y: number };
+  pointerMouseStart?: { x: number; y: number };
   pointerDown: boolean;
   pointerQueue: Promise<void>;
 };
@@ -650,6 +652,8 @@ export async function submitManualCaptchaPointer(
       }
       session.pointerDown = false;
       session.pointerBox = undefined;
+      session.pointerInputStart = undefined;
+      session.pointerMouseStart = undefined;
       return;
     }
     if (!(["start", "move", "end"] as const).includes(input.phase)) {
@@ -664,11 +668,26 @@ export async function submitManualCaptchaPointer(
       }
       const box = await session.captcha.boundingBox();
       if (!box) throw manualCaptchaError("o desafio atual não está mais visível.");
-      const x = box.x + point.x * box.width;
-      const y = box.y + point.y * box.height;
-      await session.page.mouse.move(x, y);
+      const inputStart = {
+        x: box.x + point.x * box.width,
+        y: box.y + point.y * box.height,
+      };
+      const sliderBox = await session.page
+        .locator("#aliyunCaptcha-sliding-slider")
+        .first()
+        .boundingBox()
+        .catch(() => null);
+      const mouseStart = sliderBox
+        ? {
+            x: sliderBox.x + Math.min(14, sliderBox.width / 2),
+            y: sliderBox.y + sliderBox.height / 2,
+          }
+        : inputStart;
+      await session.page.mouse.move(mouseStart.x, mouseStart.y);
       await session.page.mouse.down();
       session.pointerBox = box;
+      session.pointerInputStart = inputStart;
+      session.pointerMouseStart = mouseStart;
       session.pointerDown = true;
       return;
     }
@@ -676,14 +695,24 @@ export async function submitManualCaptchaPointer(
     if (!session.pointerDown || !session.pointerBox) {
       throw manualCaptchaError("inicie o arraste antes de mover a peça.");
     }
-    const x = session.pointerBox.x + point.x * session.pointerBox.width;
-    const y = session.pointerBox.y + point.y * session.pointerBox.height;
+    const inputPoint = {
+      x: session.pointerBox.x + point.x * session.pointerBox.width,
+      y: session.pointerBox.y + point.y * session.pointerBox.height,
+    };
+    const x = session.pointerInputStart && session.pointerMouseStart
+      ? session.pointerMouseStart.x + inputPoint.x - session.pointerInputStart.x
+      : inputPoint.x;
+    const y = session.pointerInputStart && session.pointerMouseStart
+      ? session.pointerMouseStart.y + inputPoint.y - session.pointerInputStart.y
+      : inputPoint.y;
     try {
       await session.page.mouse.move(x, y);
       if (input.phase === "end") {
         await session.page.mouse.up();
         session.pointerDown = false;
         session.pointerBox = undefined;
+        session.pointerInputStart = undefined;
+        session.pointerMouseStart = undefined;
         session.submittedAt = Date.now();
       }
     } catch (error) {
@@ -691,6 +720,8 @@ export async function submitManualCaptchaPointer(
         await session.page.mouse.up().catch(() => {});
         session.pointerDown = false;
         session.pointerBox = undefined;
+        session.pointerInputStart = undefined;
+        session.pointerMouseStart = undefined;
       }
       throw error;
     }
@@ -811,6 +842,8 @@ export async function waitForManualCaptcha(
       await page.mouse.up().catch(() => {});
       session.pointerDown = false;
       session.pointerBox = undefined;
+      session.pointerInputStart = undefined;
+      session.pointerMouseStart = undefined;
     }
     if (manualCaptchaSessions.get(job.id) === session) {
       manualCaptchaSessions.delete(job.id);
