@@ -69,10 +69,13 @@ test("dashboard offers a confirmed bulk authentication action", () => {
 test("dashboard opens an interactive CAPTCHA for automatic account creation", () => {
   assert.match(dashboardHtml, /id="captchaDialog"/);
   assert.match(dashboardHtml, /data-captcha=/);
-  assert.match(dashboardHtml, /captcha\/drag/);
+  assert.match(dashboardHtml, /captcha\/pointer/);
   assert.match(dashboardHtml, /pointermove/);
   assert.match(dashboardHtml, /CAPTCHA aparece aqui no painel/);
   assert.match(dashboardHtml, /CAPTCHA_REFRESH_DELAY_MS = 750/);
+  assert.match(dashboardHtml, /CAPTCHA_DRAG_REFRESH_DELAY_MS = 100/);
+  assert.match(dashboardHtml, /Movimento ao vivo/);
+  assert.match(dashboardHtml, /acompanha o movimento enquanto você arrasta/);
   assert.match(dashboardHtml, /Atualização automática ativa/);
   assert.doesNotMatch(dashboardHtml, /setInterval\(loadCaptchaImage/);
   assert.doesNotMatch(dashboardHtml, /captchaRefreshBtn/);

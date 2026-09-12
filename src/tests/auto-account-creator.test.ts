@@ -390,7 +390,7 @@ test("AutoCreator: follows the logical puzzle position while its visual position
   }
 });
 
-test("AutoCreator: pauses for a CAPTCHA trajectory submitted through the panel", async () => {
+test("AutoCreator: streams a CAPTCHA drag while the panel keeps capturing it", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -455,26 +455,43 @@ test("AutoCreator: pauses for a CAPTCHA trajectory submitted through the panel",
     );
     assert.strictEqual(screenshotResponse.status, 200);
     assert.strictEqual(screenshotResponse.headers.get("cache-control"), "no-store");
-    assert.ok((await screenshotResponse.arrayBuffer()).byteLength > 100);
+    const screenshotBefore = Buffer.from(await screenshotResponse.arrayBuffer());
+    assert.ok(screenshotBefore.byteLength > 100);
 
-    const dragResponse = await adminApp.fetch(
+    const pointerRequest = (phase: "start" | "move" | "end", x: number) =>
+      adminApp.fetch(
+        new Request(
+          `http://localhost/api/admin/registrations/${job.id}/captcha/pointer`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ phase, point: { x, y: 0.917, t: 0 } }),
+          },
+        ),
+      );
+
+    assert.strictEqual((await pointerRequest("start", 0.047)).status, 202);
+    assert.strictEqual((await pointerRequest("move", 0.4)).status, 202);
+
+    const liveScreenshotResponse = await adminApp.fetch(
       new Request(
-        `http://localhost/api/admin/registrations/${job.id}/captcha/drag`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            points: [
-              { x: 0.047, y: 0.917, t: 0 },
-              { x: 0.2, y: 0.913, t: 80 },
-              { x: 0.4, y: 0.92, t: 170 },
-              { x: 0.571, y: 0.917, t: 260 },
-            ],
-          }),
-        },
+        `http://localhost/api/admin/registrations/${job.id}/captcha`,
       ),
     );
-    assert.strictEqual(dragResponse.status, 202);
+    assert.strictEqual(liveScreenshotResponse.status, 200);
+    const screenshotDuringDrag = Buffer.from(
+      await liveScreenshotResponse.arrayBuffer(),
+    );
+    assert.ok(screenshotDuringDrag.byteLength > 100);
+    assert.ok(
+      Number.parseFloat(
+        await page.locator("#aliyunCaptcha-puzzle").evaluate((element) =>
+          (element as HTMLElement).style.left,
+        ),
+      ) > 50,
+    );
+
+    assert.strictEqual((await pointerRequest("end", 0.571)).status, 202);
     await waiting;
 
     assert.match(await page.locator("body").innerText(), /verified/i);

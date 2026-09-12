@@ -22,7 +22,9 @@ import {
   listRegistrationJobs,
   startRegistration,
   submitManualCaptchaDrag,
+  submitManualCaptchaPointer,
   type ManualCaptchaDrag,
+  type ManualCaptchaPointer,
 } from "../services/account-registration.ts";
 import {
   createAccountsManually,
@@ -258,6 +260,22 @@ adminApp.post("/api/admin/registrations/:id/captcha/drag", async (c) => {
     .catch(() => ({ points: [] }));
   try {
     await submitManualCaptchaDrag(c.req.param("id"), body);
+    return c.json({ ok: true }, 202);
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      409,
+    );
+  }
+});
+
+adminApp.post("/api/admin/registrations/:id/captcha/pointer", async (c) => {
+  const body = await c.req
+    .json<ManualCaptchaPointer>()
+    .catch(() => undefined);
+  if (!body) return c.json({ error: "Movimento do CAPTCHA inválido" }, 400);
+  try {
+    await submitManualCaptchaPointer(c.req.param("id"), body);
     return c.json({ ok: true }, 202);
   } catch (error) {
     return c.json(

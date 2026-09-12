@@ -145,7 +145,7 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
     <h3>Resolver CAPTCHA</h3>
     <div class="muted" id="captchaStatus">Carregando o desafio atual…</div>
     <div class="captcha-stage"><img id="captchaImage" alt="CAPTCHA atual do cadastro" draggable="false"></div>
-    <div class="notice">CAPTCHA aparece aqui no painel e atualiza automaticamente. A imagem pausa enquanto você arrasta a peça.</div>
+    <div class="notice">CAPTCHA aparece aqui no painel e acompanha o movimento enquanto você arrasta a peça.</div>
     <div class="modal-actions">
       <button type="button" class="ghost" id="captchaCloseBtn">Fechar</button>
     </div>
@@ -236,13 +236,17 @@ function metricCard(label, value, detail, action = "") {
 
 let activeView = "accounts";
 let captchaJobId = "";
-let captchaPoints = [];
 let captchaPointerId = null;
 let captchaStartedAt = 0;
 let captchaImageUrl = "";
 let captchaRefreshTimer = null;
 let captchaSubmitting = false;
+let captchaPointerStart = Promise.resolve();
+let captchaPendingMove = null;
+let captchaMovePromise = null;
+let captchaPointerError = null;
 const CAPTCHA_REFRESH_DELAY_MS = 750;
+const CAPTCHA_DRAG_REFRESH_DELAY_MS = 100;
 
 function setCaptchaStatus(message) {
   $("#captchaStatus").textContent = message;
@@ -255,12 +259,15 @@ function clearCaptchaImage() {
 }
 
 function resetCaptchaDialog() {
+  if (captchaPointerId !== null) cancelCaptchaPointer();
   if (captchaRefreshTimer) clearTimeout(captchaRefreshTimer);
   captchaRefreshTimer = null;
   captchaJobId = "";
-  captchaPoints = [];
   captchaPointerId = null;
   captchaSubmitting = false;
+  captchaPendingMove = null;
+  captchaMovePromise = null;
+  captchaPointerError = null;
   $("#captchaImage").classList.remove("dragging");
   clearCaptchaImage();
 }
@@ -288,10 +295,6 @@ function closeCaptchaDialog() {
 async function loadCaptchaImage() {
   const jobId = captchaJobId;
   if (!jobId) return;
-  if (captchaSubmitting || captchaPointerId !== null) {
-    scheduleCaptchaRefresh(150);
-    return;
-  }
   stopCaptchaRefresh();
   try {
     const response = await fetch(
@@ -305,22 +308,28 @@ async function loadCaptchaImage() {
       return;
     }
     const nextUrl = URL.createObjectURL(await response.blob());
-    if (
-      jobId !== captchaJobId ||
-      captchaSubmitting ||
-      captchaPointerId !== null
-    ) {
+    if (jobId !== captchaJobId) {
       URL.revokeObjectURL(nextUrl);
       return;
     }
     clearCaptchaImage();
     captchaImageUrl = nextUrl;
     $("#captchaImage").src = nextUrl;
-    setCaptchaStatus("Arraste a peça sobre a posição correta. Atualização automática ativa.");
+    setCaptchaStatus(
+      captchaPointerId !== null
+        ? "Movimento ao vivo: continue arrastando até encaixar a peça."
+        : "Arraste a peça sobre a posição correta. Atualização automática ativa.",
+    );
   } catch (error) {
     setCaptchaStatus(error.message || "Não foi possível carregar o desafio.");
   } finally {
-    if (jobId === captchaJobId) scheduleCaptchaRefresh();
+    if (jobId === captchaJobId) {
+      scheduleCaptchaRefresh(
+        captchaPointerId !== null
+          ? CAPTCHA_DRAG_REFRESH_DELAY_MS
+          : CAPTCHA_REFRESH_DELAY_MS,
+      );
+    }
   }
 }
 
@@ -340,42 +349,85 @@ function captchaPoint(event) {
   };
 }
 
-function recordCaptchaPoint(event) {
-  const point = captchaPoint(event);
-  const previous = captchaPoints[captchaPoints.length - 1];
-  if (
-    !previous ||
-    point.t - previous.t >= 16 ||
-    Math.abs(point.x - previous.x) >= 0.004 ||
-    Math.abs(point.y - previous.y) >= 0.004
-  ) {
-    if (captchaPoints.length < 80) captchaPoints.push(point);
-  }
+function sendCaptchaPointer(jobId, phase, point) {
+  return api(
+    "/api/admin/registrations/" + encodeURIComponent(jobId) + "/captcha/pointer",
+    {
+      method: "POST",
+      body: JSON.stringify(point ? { phase, point } : { phase }),
+    },
+  );
 }
 
-async function submitCaptchaDrag() {
+function beginCaptchaPointer(point) {
   const jobId = captchaJobId;
-  if (!jobId || captchaPoints.length < 2) {
-    setCaptchaStatus("Arraste a peça até a posição desejada.");
-    return;
-  }
+  captchaPendingMove = null;
+  captchaMovePromise = null;
+  captchaPointerError = null;
+  captchaPointerStart = sendCaptchaPointer(jobId, "start", point);
+  captchaPointerStart.catch((error) => {
+    captchaPointerError = error;
+    setCaptchaStatus(error.message || "Não foi possível iniciar o arraste ao vivo.");
+  });
+}
+
+function queueCaptchaMove(point) {
+  captchaPendingMove = point;
+  if (captchaMovePromise) return captchaMovePromise;
+  const jobId = captchaJobId;
+  captchaMovePromise = (async () => {
+    await captchaPointerStart;
+    while (captchaPendingMove && jobId === captchaJobId) {
+      const nextPoint = captchaPendingMove;
+      captchaPendingMove = null;
+      await sendCaptchaPointer(jobId, "move", nextPoint);
+    }
+  })()
+    .catch((error) => {
+      captchaPointerError = error;
+      setCaptchaStatus(error.message || "O movimento ao vivo foi interrompido.");
+    })
+    .finally(() => {
+      captchaMovePromise = null;
+    });
+  return captchaMovePromise;
+}
+
+async function finishCaptchaPointer(point) {
+  const jobId = captchaJobId;
+  if (!jobId) return;
   captchaSubmitting = true;
-  setCaptchaStatus("Enviando o seu arraste para o CAPTCHA…");
+  setCaptchaStatus("Finalizando o arraste e verificando o CAPTCHA…");
   try {
-    await api(
-      "/api/admin/registrations/" + encodeURIComponent(jobId) + "/captcha/drag",
-      { method: "POST", body: JSON.stringify({ points: captchaPoints }) },
-    );
+    await queueCaptchaMove(point);
+    if (captchaPointerError) throw captchaPointerError;
+    await sendCaptchaPointer(jobId, "end", point);
     setCaptchaStatus("Verificando o CAPTCHA…");
-    scheduleCaptchaRefresh(700);
     setTimeout(load, 800);
   } catch (error) {
+    await sendCaptchaPointer(jobId, "cancel").catch(() => {});
     setCaptchaStatus(error.message || "O arraste não pôde ser enviado.");
   } finally {
     captchaSubmitting = false;
-    captchaPoints = [];
+    captchaPendingMove = null;
+    captchaMovePromise = null;
+    captchaPointerError = null;
+    captchaPointerId = null;
     $("#captchaImage").classList.remove("dragging");
+    scheduleCaptchaRefresh(150);
   }
+}
+
+async function cancelCaptchaPointer() {
+  const jobId = captchaJobId;
+  const movePromise = captchaMovePromise;
+  captchaPendingMove = null;
+  if (!jobId) return;
+  try {
+    await captchaPointerStart.catch(() => {});
+    if (movePromise) await movePromise;
+    await sendCaptchaPointer(jobId, "cancel");
+  } catch {}
 }
 
 function showView(view) {
@@ -623,29 +675,27 @@ $("#jobs").addEventListener("click", (e) => {
 $("#captchaImage").addEventListener("pointerdown", (event) => {
   if (!captchaJobId || captchaSubmitting || !event.currentTarget.src) return;
   event.preventDefault();
-  stopCaptchaRefresh();
   captchaPointerId = event.pointerId;
   captchaStartedAt = Date.now();
-  captchaPoints = [];
-  recordCaptchaPoint(event);
+  beginCaptchaPointer(captchaPoint(event));
   event.currentTarget.setPointerCapture(event.pointerId);
   event.currentTarget.classList.add("dragging");
+  setCaptchaStatus("Movimento ao vivo iniciado. Arraste devagar para acompanhar a peça.");
+  scheduleCaptchaRefresh(CAPTCHA_DRAG_REFRESH_DELAY_MS);
 });
 $("#captchaImage").addEventListener("pointermove", (event) => {
   if (event.pointerId !== captchaPointerId) return;
-  recordCaptchaPoint(event);
+  queueCaptchaMove(captchaPoint(event));
 });
 $("#captchaImage").addEventListener("pointerup", async (event) => {
   if (event.pointerId !== captchaPointerId) return;
-  recordCaptchaPoint(event);
   event.currentTarget.releasePointerCapture(event.pointerId);
-  captchaPointerId = null;
-  await submitCaptchaDrag();
+  await finishCaptchaPointer(captchaPoint(event));
 });
-$("#captchaImage").addEventListener("pointercancel", (event) => {
+$("#captchaImage").addEventListener("pointercancel", async (event) => {
   if (event.pointerId !== captchaPointerId) return;
+  await cancelCaptchaPointer();
   captchaPointerId = null;
-  captchaPoints = [];
   event.currentTarget.classList.remove("dragging");
   setCaptchaStatus("Arraste cancelado. Tente novamente.");
   scheduleCaptchaRefresh(150);

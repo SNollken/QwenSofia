@@ -76,11 +76,26 @@ export interface ManualCaptchaDrag {
   points: ManualCaptchaPoint[];
 }
 
+export interface ManualCaptchaPointer {
+  phase: "start" | "move" | "end" | "cancel";
+  point?: ManualCaptchaPoint;
+}
+
+type ManualCaptchaBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 type ManualCaptchaSession = {
   captcha: Locator;
   page: Page;
   submittedAt?: number;
   submitting: boolean;
+  pointerBox?: ManualCaptchaBox;
+  pointerDown: boolean;
+  pointerQueue: Promise<void>;
 };
 
 const jobs = new Map<string, RegistrationJob>();
@@ -576,6 +591,32 @@ function validateManualCaptchaDrag(input: ManualCaptchaDrag): void {
   }
 }
 
+function validateManualCaptchaPoint(point: ManualCaptchaPoint | undefined): void {
+  if (
+    !point ||
+    !Number.isFinite(point.x) ||
+    !Number.isFinite(point.y) ||
+    !Number.isFinite(point.t) ||
+    point.x < 0 ||
+    point.x > 1 ||
+    point.y < 0 ||
+    point.y > 1 ||
+    point.t < 0 ||
+    point.t > 15_000
+  ) {
+    throw manualCaptchaError("o ponto recebido é inválido.");
+  }
+}
+
+function queueManualCaptchaOperation(
+  session: ManualCaptchaSession,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const next = session.pointerQueue.then(operation);
+  session.pointerQueue = next.catch(() => {});
+  return next;
+}
+
 function getManualCaptchaSession(jobId: string): ManualCaptchaSession {
   const session = manualCaptchaSessions.get(jobId);
   if (!session || session.page.isClosed()) {
@@ -593,12 +634,79 @@ export async function getManualCaptchaScreenshot(jobId: string): Promise<Buffer>
   return session.captcha.screenshot({ type: "png" });
 }
 
+export async function submitManualCaptchaPointer(
+  jobId: string,
+  input: ManualCaptchaPointer,
+): Promise<void> {
+  const session = getManualCaptchaSession(jobId);
+  await queueManualCaptchaOperation(session, async () => {
+    if (session.submitting) {
+      throw manualCaptchaError("o arraste anterior ainda está sendo enviado.");
+    }
+
+    if (input.phase === "cancel") {
+      if (session.pointerDown && !session.page.isClosed()) {
+        await session.page.mouse.up().catch(() => {});
+      }
+      session.pointerDown = false;
+      session.pointerBox = undefined;
+      return;
+    }
+    if (!(["start", "move", "end"] as const).includes(input.phase)) {
+      throw manualCaptchaError("a fase do arraste é inválida.");
+    }
+    validateManualCaptchaPoint(input.point);
+    const point = input.point as ManualCaptchaPoint;
+
+    if (input.phase === "start") {
+      if (session.pointerDown) {
+        throw manualCaptchaError("já há um arraste em andamento.");
+      }
+      const box = await session.captcha.boundingBox();
+      if (!box) throw manualCaptchaError("o desafio atual não está mais visível.");
+      const x = box.x + point.x * box.width;
+      const y = box.y + point.y * box.height;
+      await session.page.mouse.move(x, y);
+      await session.page.mouse.down();
+      session.pointerBox = box;
+      session.pointerDown = true;
+      return;
+    }
+
+    if (!session.pointerDown || !session.pointerBox) {
+      throw manualCaptchaError("inicie o arraste antes de mover a peça.");
+    }
+    const x = session.pointerBox.x + point.x * session.pointerBox.width;
+    const y = session.pointerBox.y + point.y * session.pointerBox.height;
+    try {
+      await session.page.mouse.move(x, y);
+      if (input.phase === "end") {
+        await session.page.mouse.up();
+        session.pointerDown = false;
+        session.pointerBox = undefined;
+        session.submittedAt = Date.now();
+      }
+    } catch (error) {
+      if (input.phase === "end" && !session.page.isClosed()) {
+        await session.page.mouse.up().catch(() => {});
+        session.pointerDown = false;
+        session.pointerBox = undefined;
+      }
+      throw error;
+    }
+  });
+}
+
 export async function submitManualCaptchaDrag(
   jobId: string,
   input: ManualCaptchaDrag,
 ): Promise<void> {
   validateManualCaptchaDrag(input);
   const session = getManualCaptchaSession(jobId);
+  await session.pointerQueue;
+  if (session.pointerDown) {
+    throw manualCaptchaError("há um arraste ao vivo em andamento.");
+  }
   if (session.submitting) {
     throw manualCaptchaError("o arraste anterior ainda está sendo enviado.");
   }
@@ -650,6 +758,8 @@ export async function waitForManualCaptcha(
     captcha: page.locator("#aliyunCaptcha-window-float").first(),
     page,
     submitting: false,
+    pointerDown: false,
+    pointerQueue: Promise.resolve(),
   };
   manualCaptchaSessions.set(job.id, session);
   const captcha = await getManualCaptchaLocator(page);
@@ -696,6 +806,12 @@ export async function waitForManualCaptcha(
       await sleep(350);
     }
   } finally {
+    await session.pointerQueue.catch(() => {});
+    if (session.pointerDown && !page.isClosed()) {
+      await page.mouse.up().catch(() => {});
+      session.pointerDown = false;
+      session.pointerBox = undefined;
+    }
     if (manualCaptchaSessions.get(job.id) === session) {
       manualCaptchaSessions.delete(job.id);
     }
