@@ -812,7 +812,7 @@ export async function waitForManualCaptcha(
       : "CAPTCHA aparece aqui no painel. Arraste a peça para continuar o cadastro automático.",
   );
 
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + Math.max(timeoutMs, job.localBrowser ? 1_800_000 : 0);
   try {
     while (Date.now() < deadline) {
       if (page.isClosed()) throw manualCaptchaError("o navegador do cadastro foi fechado.");
