@@ -51,9 +51,10 @@ async function connectLocalBrowser(
     throw new Error("o Chrome local não expôs um contexto de navegador.");
   }
 
-  for (const page of context.pages()) {
-    await page.close().catch(() => {});
-  }
+  const pages = context.pages();
+  const primaryPage = pages[0] ?? (await context.newPage());
+  await Promise.all(pages.slice(1).map((page) => page.close().catch(() => {})));
+  await primaryPage.goto("about:blank").catch(() => {});
 
   return {
     context,
