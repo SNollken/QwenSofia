@@ -52,6 +52,15 @@ async function connectLocalBrowser(
   }
 
   const pages = context.pages();
+  for (const page of pages) {
+    if (new URL(page.url()).hostname === "chat.qwen.ai") {
+      await page.evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      }).catch(() => {});
+    }
+  }
+  await context.clearCookies({ domain: /(^|\.)qwen\.ai$/i });
   const primaryPage = pages[0] ?? (await context.newPage());
   await Promise.all(pages.slice(1).map((page) => page.close().catch(() => {})));
   await primaryPage.goto("about:blank").catch(() => {});
