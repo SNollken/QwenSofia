@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "npx tsx src/index.ts",
+    "account-browser:local": "tsx src/local-account-browser.ts",
     "desktop": "electron desktop/main.cjs",
     "login": "npx tsx src/login.ts",
     "delete-chats": "npx tsx src/delete-chats.ts",

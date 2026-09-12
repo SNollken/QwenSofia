@@ -67,6 +67,10 @@ test("dashboard offers a confirmed bulk authentication action", () => {
   assert.match(dashboardHtml, /uma por vez/);
 });
 
+test("dashboard declares a QwenSofia favicon", () => {
+  assert.match(dashboardHtml, /<link rel="icon" href="data:image\/svg\+xml,/);
+});
+
 test("dashboard opens the real account browser for CAPTCHA interaction", () => {
   assert.match(dashboardHtml, /id="captchaDialog"/);
   assert.match(dashboardHtml, /data-captcha=/);
@@ -74,6 +78,11 @@ test("dashboard opens the real account browser for CAPTCHA interaction", () => {
   assert.match(dashboardHtml, /\/remote-browser\?job=/);
   assert.match(dashboardHtml, /janela real do cadastro/);
   assert.doesNotMatch(dashboardHtml, /captchaRefreshBtn/);
+});
+
+test("dashboard directs local creator CAPTCHAs to the Windows Chrome window", () => {
+  assert.match(dashboardHtml, /j\.state === 'solving-captcha' && !j\.localBrowser/);
+  assert.match(dashboardHtml, /Use a janela do Chrome aberta neste PC/);
 });
 
 test("remote account browser uses an interactive local noVNC connection", () => {

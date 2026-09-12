@@ -198,7 +198,7 @@ npm run desktop
 | **Autenticar / Remover** | Revalida sessão ou remove conta + perfil local |
 | **Configuração** | Base URL, API key e `ADMIN_TOKEN` opcional |
 
-Quando exigido pelo Qwen, o CAPTCHA aparece no painel: arraste a peça na imagem e o navegador do cadastro recebe sua trajetória. A confirmação de e-mail segue automática para caixas temporárias. Depois disso a conta é autenticada e inserida no pool automaticamente.
+Quando configurado com `ACCOUNT_CREATOR_LOCAL_HELPER_URL` e `ACCOUNT_CREATOR_CDP_URL`, o cadastro abre no Google Chrome do PC conectado ao túnel. Assim o formulário e o CAPTCHA usam a conexão local; depois do arraste manual, a confirmação de e-mail, a transferência da sessão e a entrada no pool continuam automáticas no VPS.
 
 ### Auto-create no rate limit (experimental)
 
@@ -294,6 +294,8 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | `ACCOUNT_CREATOR_MAX_BATCH` | `5` | Máximo de contas por chamada manual/batch. |
 | `ACCOUNT_CREATOR_AUTO_AUTH` | `true` | Autentica automaticamente ao adicionar conta via admin/API. |
 | `ACCOUNT_CREATOR_FORCE_HEADLESS` | `false` | Força headless no cadastro; o CAPTCHA continua apresentado no painel, mas o upstream pode recusá-lo. |
+| `ACCOUNT_CREATOR_LOCAL_HELPER_URL` | vazio | Helper do Windows acessível pelo túnel reverso para abrir o Chrome local. |
+| `ACCOUNT_CREATOR_CDP_URL` | vazio | Endpoint CDP reverso do Chrome local usado pelo cadastro. |
 
 ### Timeouts
 
@@ -414,6 +416,8 @@ O projeto não implementa `/v1/completions` (Completions legacy). O estado de `p
 | `/api/admin/account-creator/run` | POST | Cria N contas automáticas (`{"count":1}`; `?wait=1` espera o fim) |
 
 No VPS, o cadastro pode usar um display X11 exclusivo com `ACCOUNT_CREATOR_DISPLAY=:101`. Os serviços em `deploy/systemd/` publicam esse display somente em `127.0.0.1:6080`; encaminhe essa porta pelo mesmo túnel SSH do painel. Assim, o modal mostra o navegador real e recebe o mouse local diretamente, sem depender de capturas periódicas do CAPTCHA.
+
+Para executar o cadastro realmente no Windows, rode uma vez `powershell -ExecutionPolicy Bypass -File deploy/windows/install-local-account-browser.ps1` e acrescente ao host `VPS-tunnel` as linhas `RemoteForward 9222 127.0.0.1:9222` e `RemoteForward 9223 127.0.0.1:9223`. No serviço do VPS, configure `ACCOUNT_CREATOR_LOCAL_HELPER_URL=http://127.0.0.1:9223` e `ACCOUNT_CREATOR_CDP_URL=http://127.0.0.1:9222`. O helper fica invisível; uma janela dedicada do Chrome só aparece quando um cadastro começa.
 
 ---
 

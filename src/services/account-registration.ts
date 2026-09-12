@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  chromium,
   type BrowserContext,
+  type Cookie,
   type Locator,
   type Page,
 } from "playwright";
@@ -29,6 +29,10 @@ import {
   isAccessVerificationVisible,
   isCaptchaFailed,
 } from "./aliyun-captcha-solver.ts";
+import {
+  launchRegistrationBrowser,
+  type RegistrationBrowser,
+} from "./registration-browser.ts";
 
 export type RegistrationState =
   | "queued"
@@ -57,6 +61,7 @@ export interface RegistrationJob {
   provider?: string;
   verificationCode?: string;
   hasCookies?: boolean;
+  localBrowser?: boolean;
 }
 
 export interface RegistrationRequest {
@@ -802,7 +807,9 @@ export async function waitForManualCaptcha(
   setJob(
     job,
     "solving-captcha",
-    "CAPTCHA aparece aqui no painel. Arraste a peça para continuar o cadastro automático.",
+    job.localBrowser
+      ? "CAPTCHA aberto no Chrome deste PC. Resolva na janela local; depois o cadastro continua automático."
+      : "CAPTCHA aparece aqui no painel. Arraste a peça para continuar o cadastro automático.",
   );
 
   const deadline = Date.now() + timeoutMs;
@@ -831,7 +838,9 @@ export async function waitForManualCaptcha(
         setJob(
           job,
           "solving-captcha",
-          "CAPTCHA recusado. O desafio atualizado está no painel; tente novamente.",
+          job.localBrowser
+            ? "CAPTCHA recusado. Tente novamente na janela do Chrome deste PC."
+            : "CAPTCHA recusado. O desafio atualizado está no painel; tente novamente.",
         );
       }
       await sleep(350);
@@ -850,7 +859,11 @@ export async function waitForManualCaptcha(
     }
   }
 
-  throw manualCaptchaError("não foi resolvido no painel a tempo.");
+  throw manualCaptchaError(
+    job.localBrowser
+      ? "não foi resolvido no Chrome local a tempo."
+      : "não foi resolvido no painel a tempo.",
+  );
 }
 
 async function handleCaptcha(
@@ -1354,6 +1367,8 @@ async function runRegistration(
   const accountId = crypto.randomUUID();
   const profilePath = path.resolve("data", "qwen_profiles", accountId);
   let context: BrowserContext | undefined;
+  let registrationBrowser: RegistrationBrowser | undefined;
+  let sessionCookies: Cookie[] | undefined;
   let persisted = false;
   let mailbox: TempMailbox | null = null;
 
@@ -1388,11 +1403,9 @@ async function runRegistration(
         ? "Abrindo navegador headless (pode falhar no CAPTCHA/Access Verification)…"
         : "Abrindo navegador do cadastro — se houver CAPTCHA, ele aparecerá no painel; depois o link do e-mail é clicado automático…",
     );
-    context = await chromium.launchPersistentContext(profilePath, {
+    registrationBrowser = await launchRegistrationBrowser(profilePath, {
       headless,
-      env: process.env.ACCOUNT_CREATOR_DISPLAY
-        ? { ...process.env, DISPLAY: process.env.ACCOUNT_CREATOR_DISPLAY }
-        : undefined,
+      display: process.env.ACCOUNT_CREATOR_DISPLAY,
       viewport: { width: 1280, height: 860 },
       locale: "pt-BR",
       args: [
@@ -1402,6 +1415,7 @@ async function runRegistration(
         "--no-sandbox",
       ],
     });
+    context = registrationBrowser.context;
 
     // glm-style: two tabs in the SAME browser
     // mailPage = tuamaeaquelaursa inbox | page = Qwen signup
@@ -1654,7 +1668,16 @@ async function runRegistration(
       "Ativação OK. Mantendo navegador aberto 3s para gravar sessão…",
     );
     await sleep(3_000);
-    await context.close();
+    if (registrationBrowser.local) {
+      sessionCookies = (await context.cookies()).filter((cookie) =>
+        /(^|\.)qwen\.ai$/i.test(cookie.domain),
+      );
+      if (sessionCookies.length === 0) {
+        throw new Error("Chrome local não produziu cookies de sessão do Qwen.");
+      }
+    }
+    await registrationBrowser.close();
+    registrationBrowser = undefined;
     context = undefined;
 
     setJob(
@@ -1666,7 +1689,13 @@ async function runRegistration(
     persisted = true;
     job.accountId = account.id;
 
-    await initPlaywrightForAccount(account, config.playwright.headless);
+    await initPlaywrightForAccount(
+      account,
+      config.playwright.headless,
+      "chromium",
+      undefined,
+      sessionCookies,
+    );
     let hasHeaders = accountHasCapturedHeaders(account.id);
     if (!hasHeaders) {
       setJob(
@@ -1697,7 +1726,8 @@ async function runRegistration(
     const message = error instanceof Error ? error.message : String(error);
     setJob(job, "failed", "Falha ao criar conta pronta.", message);
   } finally {
-    await context?.close().catch(() => {});
+    await registrationBrowser?.close().catch(() => {});
+    if (!registrationBrowser) await context?.close().catch(() => {});
   }
 }
 
@@ -1727,6 +1757,10 @@ export function startRegistration(
     createdAt: now,
     updatedAt: now,
     ready: false,
+    localBrowser: Boolean(
+      process.env.ACCOUNT_CREATOR_CDP_URL?.trim() &&
+        process.env.ACCOUNT_CREATOR_LOCAL_HELPER_URL?.trim(),
+    ),
   };
   jobs.set(job.id, job);
   void runRegistration(job, request);

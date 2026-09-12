@@ -6,7 +6,12 @@
  * Captures real browser headers (bx-ua, bx-umidtoken) per account.
  */
 
-import { chromium, type BrowserContext, type Page } from "playwright";
+import {
+  chromium,
+  type BrowserContext,
+  type Cookie,
+  type Page,
+} from "playwright";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -371,6 +376,7 @@ export async function initPlaywrightForAccount(
   headless = true,
   browserType: BrowserType = "chromium",
   signal?: AbortSignal,
+  initialCookies?: Cookie[],
 ): Promise<void> {
   signal?.throwIfAborted();
   if (accountPages.has(account.id)) {
@@ -437,6 +443,10 @@ export async function initPlaywrightForAccount(
     try {
       // Comprehensive stealth scripts for anti-bot evasion
       await acctContext.addInitScript(getStealthScript(fingerprint));
+
+      if (initialCookies?.length) {
+        await acctContext.addCookies(initialCookies);
+      }
 
       const acctPage = await acctContext.newPage();
       accountContexts.set(account.id, acctContext);

@@ -1,6 +1,6 @@
 export const dashboardHtml = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QwenSofia</title><style>
+<title>QwenSofia</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e85b94'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='36' font-family='Arial' font-weight='700' fill='white'%3EQ%3C/text%3E%3C/svg%3E"><style>
 :root{color-scheme:dark;--bg:#09090b;--bg-soft:#111013;--panel:rgba(23,20,26,.94);--panel-strong:#19151d;--line:#342936;--muted:#aea3b0;--text:#fff8fc;--accent-start:#e85b94;--accent-end:#ff92bd;--accent-soft:rgba(232,91,148,.18);--green:#6fcb9d;--red:#ed778f;--yellow:#d7b66f;--shadow:0 18px 42px rgba(0,0,0,.28)}
 *{box-sizing:border-box}body{min-height:100vh;margin:0;background:radial-gradient(66rem 42rem at 105% -18%,rgba(225,74,136,.16),transparent 56%),radial-gradient(50rem 34rem at -15% 100%,rgba(124,48,89,.1),transparent 58%),linear-gradient(145deg,#09090b 0%,#0d0b10 48%,#111013 100%);color:var(--text);font:14px ui-sans-serif,Segoe UI,Arial,sans-serif;letter-spacing:.005em}
 button,input{font:inherit}
@@ -211,9 +211,11 @@ function jobCard(j) {
       : (j.state === 'pending_activation'
         ? 'cool'
         : (j.state === 'completed' ? 'cool' : '')));
-  const captchaAction = j.state === 'solving-captcha'
+  const captchaAction = j.state === 'solving-captcha' && !j.localBrowser
     ? '<button type="button" class="btn secondary" data-captcha="' + esc(j.id) + '">Resolver CAPTCHA</button>'
-    : '';
+    : (j.state === 'solving-captcha'
+      ? '<span class="notice">Use a janela do Chrome aberta neste PC.</span>'
+      : '');
   return (
     '<article class="card job">' +
       "<div><strong>" + esc(j.email) + '</strong><div class="muted">' + esc(j.message) + "</div>" +
