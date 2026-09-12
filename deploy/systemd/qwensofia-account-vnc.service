@@ -1,0 +1,13 @@
+[Unit]
+Description=QwenSofia local-only account browser VNC
+Requires=qwensofia-account-display.service
+After=qwensofia-account-display.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -display :101 -rfbport 5900 -localhost -forever -shared -nopw -noxdamage -repeat
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

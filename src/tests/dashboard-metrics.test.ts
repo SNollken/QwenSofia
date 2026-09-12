@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dashboardHtml } from "../dashboard/page.ts";
+import { remoteBrowserHtml } from "../dashboard/remote-browser.ts";
 
 test("dashboard Métricas renders an in-panel health view", () => {
   assert.match(
@@ -66,19 +67,20 @@ test("dashboard offers a confirmed bulk authentication action", () => {
   assert.match(dashboardHtml, /uma por vez/);
 });
 
-test("dashboard opens an interactive CAPTCHA for automatic account creation", () => {
+test("dashboard opens the real account browser for CAPTCHA interaction", () => {
   assert.match(dashboardHtml, /id="captchaDialog"/);
   assert.match(dashboardHtml, /data-captcha=/);
-  assert.match(dashboardHtml, /captcha\/pointer/);
-  assert.match(dashboardHtml, /pointermove/);
-  assert.match(dashboardHtml, /CAPTCHA aparece aqui no painel/);
-  assert.match(dashboardHtml, /CAPTCHA_REFRESH_DELAY_MS = 750/);
-  assert.match(dashboardHtml, /CAPTCHA_DRAG_REFRESH_DELAY_MS = 100/);
-  assert.match(dashboardHtml, /Movimento ao vivo/);
-  assert.match(dashboardHtml, /acompanha o movimento enquanto você arrasta/);
-  assert.match(dashboardHtml, /Atualização automática ativa/);
-  assert.doesNotMatch(dashboardHtml, /setInterval\(loadCaptchaImage/);
+  assert.match(dashboardHtml, /id="captchaRemote"/);
+  assert.match(dashboardHtml, /\/remote-browser\?job=/);
+  assert.match(dashboardHtml, /janela real do cadastro/);
   assert.doesNotMatch(dashboardHtml, /captchaRefreshBtn/);
+});
+
+test("remote account browser uses an interactive local noVNC connection", () => {
+  assert.match(remoteBrowserHtml, /import RFB from "\/novnc\/core\/rfb\.js"/);
+  assert.match(remoteBrowserHtml, /host \+ ":6080"/);
+  assert.match(remoteBrowserHtml, /rfb\.viewOnly = false/);
+  assert.match(remoteBrowserHtml, /rfb\.scaleViewport = true/);
 });
 
 test("dashboard uses a black-cherry pink palette", () => {

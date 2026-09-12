@@ -1,0 +1,13 @@
+[Unit]
+Description=QwenSofia local-only browser WebSocket bridge
+Requires=qwensofia-account-vnc.service
+After=qwensofia-account-vnc.service
+
+[Service]
+Type=simple
+ExecStart=/home/opc/.local/bin/websockify 127.0.0.1:6080 127.0.0.1:5900
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

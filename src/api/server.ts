@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { config } from "../core/config.js";
 import { metrics } from "../core/metrics.js";
 import { logger, maskEmail } from "../core/logger.js";
@@ -21,6 +22,7 @@ import {
 import type { QwenAccount } from "../core/accounts.js";
 import { adminApp } from "./admin.js";
 import { dashboardHtml } from "../dashboard/page.js";
+import { remoteBrowserHtml } from "../dashboard/remote-browser.js";
 import { getAccountConcurrencyStats } from "../core/account-concurrency.ts";
 
 // Module-level state (initialized in startServer)
@@ -270,6 +272,17 @@ app.use("/api/admin/*", async (c, next) => {
   await next();
 });
 app.route("", adminApp);
+app.use(
+  "/novnc/*",
+  serveStatic({
+    root: "./node_modules/@novnc/novnc",
+    rewriteRequestPath: (requestPath) => requestPath.replace(/^\/novnc/, ""),
+  }),
+);
+app.get("/remote-browser", (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.html(remoteBrowserHtml);
+});
 app.get("/", (c) => {
   c.header("Cache-Control", "no-store");
   return c.html(dashboardHtml);

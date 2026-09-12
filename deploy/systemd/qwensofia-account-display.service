@@ -1,0 +1,11 @@
+[Unit]
+Description=QwenSofia dedicated account-creation display
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/Xvfb :101 -screen 0 1280x860x24 -nolisten tcp -ac
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

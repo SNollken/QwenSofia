@@ -1390,6 +1390,9 @@ async function runRegistration(
     );
     context = await chromium.launchPersistentContext(profilePath, {
       headless,
+      env: process.env.ACCOUNT_CREATOR_DISPLAY
+        ? { ...process.env, DISPLAY: process.env.ACCOUNT_CREATOR_DISPLAY }
+        : undefined,
       viewport: { width: 1280, height: 860 },
       locale: "pt-BR",
       args: [

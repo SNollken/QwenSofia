@@ -390,6 +390,7 @@ O projeto não implementa `/v1/completions` (Completions legacy). O estado de `p
 | Rota | Método | Descrição |
 |---|---|---|
 | `/` | GET | Dashboard web (contas / criação) |
+| `/remote-browser` | GET | Cliente noVNC do navegador interativo usado no cadastro |
 | `/health` | GET | Health check |
 | `/metrics` | GET | Métricas Prometheus |
 | `/v1/upload` | POST | Upload de arquivos |
@@ -408,8 +409,11 @@ O projeto não implementa `/v1/completions` (Completions legacy). O estado de `p
 | `/api/admin/registrations/:id` | GET | Status do job de cadastro |
 | `/api/admin/registrations/:id/captcha` | GET | Imagem PNG sem cache do CAPTCHA aguardando no job |
 | `/api/admin/registrations/:id/captcha/drag` | POST | Envia a trajetória normalizada do arraste (`{"points":[{"x":0,"y":0,"t":0}]}`) |
+| `/api/admin/registrations/:id/captcha/pointer` | POST | Compatibilidade com o arraste remoto antigo (`start`, `move`, `end`, `cancel`) |
 | `/api/admin/account-creator` | GET | Status do criador automático |
 | `/api/admin/account-creator/run` | POST | Cria N contas automáticas (`{"count":1}`; `?wait=1` espera o fim) |
+
+No VPS, o cadastro pode usar um display X11 exclusivo com `ACCOUNT_CREATOR_DISPLAY=:101`. Os serviços em `deploy/systemd/` publicam esse display somente em `127.0.0.1:6080`; encaminhe essa porta pelo mesmo túnel SSH do painel. Assim, o modal mostra o navegador real e recebe o mouse local diretamente, sem depender de capturas periódicas do CAPTCHA.
 
 ---
 

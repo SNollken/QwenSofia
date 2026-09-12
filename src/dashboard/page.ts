@@ -36,7 +36,7 @@ label{display:grid;gap:6px;color:var(--muted)}
 input{background:#151118;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:10px 12px}input:focus{outline:0;border-color:#ff8fba;box-shadow:0 0 0 3px rgba(232,91,148,.14)}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px}
 .notice{border:1px solid #3a3320;background:#1a160c;color:#e6d39a;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px}
-.captcha-stage{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#111;margin:16px 0}.captcha-stage img{display:block;width:100%;touch-action:none;user-select:none;cursor:grab}.captcha-stage img.dragging{cursor:grabbing}
+.captcha-stage{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#111;margin:16px 0}.captcha-stage iframe{display:block;width:100%;height:min(70vh,720px);border:0}.captcha-stage img{display:block;width:100%;touch-action:none;user-select:none;cursor:grab}.captcha-stage img.dragging{cursor:grabbing}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
 .jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(202,164,188,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#d2c6d1;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#ffadd0;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
@@ -143,9 +143,12 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
 <dialog id="captchaDialog">
   <div class="modal">
     <h3>Resolver CAPTCHA</h3>
-    <div class="muted" id="captchaStatus">Carregando o desafio atual…</div>
-    <div class="captcha-stage"><img id="captchaImage" alt="CAPTCHA atual do cadastro" draggable="false"></div>
-    <div class="notice">Clique e arraste a peça ou o botão roxo. O painel segura o controle correto e acompanha o movimento.</div>
+    <div class="muted" id="captchaStatus">Conectando ao navegador do cadastro…</div>
+    <div class="captcha-stage">
+      <iframe id="captchaRemote" title="Navegador interativo do cadastro" src="about:blank"></iframe>
+      <img id="captchaImage" alt="Captura de compatibilidade do CAPTCHA" draggable="false" hidden>
+    </div>
+    <div class="notice">Esta é a janela real do cadastro. Use o mouse diretamente nela e arraste o botão roxo do CAPTCHA.</div>
     <div class="modal-actions">
       <button type="button" class="ghost" id="captchaCloseBtn">Fechar</button>
     </div>
@@ -269,6 +272,7 @@ function resetCaptchaDialog() {
   captchaMovePromise = null;
   captchaPointerError = null;
   $("#captchaImage").classList.remove("dragging");
+  $("#captchaRemote").src = "about:blank";
   clearCaptchaImage();
 }
 
@@ -337,7 +341,8 @@ function openCaptchaDialog(jobId) {
   resetCaptchaDialog();
   captchaJobId = jobId;
   $("#captchaDialog").showModal();
-  loadCaptchaImage();
+  setCaptchaStatus("Abrindo a janela real do cadastro no seu PC…");
+  $("#captchaRemote").src = "/remote-browser?job=" + encodeURIComponent(jobId);
 }
 
 function captchaPoint(event) {
