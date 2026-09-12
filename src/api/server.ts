@@ -209,22 +209,46 @@ app.route("", responsesApp);
 
 const ADMIN_RATE_WINDOW_MS = 60_000;
 const ADMIN_RATE_MAX_REQUESTS = 60;
+const LIVE_CAPTCHA_RATE_MAX_REQUESTS = 1_200;
 const adminRequestTimestamps = new Map<string, number[]>();
+const liveCaptchaRequestTimestamps = new Map<string, number[]>();
 
-function isAdminRateLimited(clientIp: string): boolean {
+function isRequestRateLimited(
+  timestampsByClient: Map<string, number[]>,
+  clientIp: string,
+  maxRequests: number,
+): boolean {
   const now = Date.now();
-  const recent = (adminRequestTimestamps.get(clientIp) ?? []).filter(
+  const recent = (timestampsByClient.get(clientIp) ?? []).filter(
     (at) => now - at < ADMIN_RATE_WINDOW_MS,
   );
   recent.push(now);
-  adminRequestTimestamps.set(clientIp, recent);
-  return recent.length > ADMIN_RATE_MAX_REQUESTS;
+  timestampsByClient.set(clientIp, recent);
+  return recent.length > maxRequests;
+}
+
+function isLiveCaptchaRequest(pathname: string): boolean {
+  return /^\/api\/admin\/registrations\/[^/]+\/captcha(?:\/pointer)?$/.test(
+    pathname,
+  );
 }
 
 app.use("/api/admin/*", async (c, next) => {
   const clientIp =
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  if (isAdminRateLimited(clientIp)) {
+  const liveCaptcha = isLiveCaptchaRequest(new URL(c.req.url).pathname);
+  const rateLimited = liveCaptcha
+    ? isRequestRateLimited(
+        liveCaptchaRequestTimestamps,
+        clientIp,
+        LIVE_CAPTCHA_RATE_MAX_REQUESTS,
+      )
+    : isRequestRateLimited(
+        adminRequestTimestamps,
+        clientIp,
+        ADMIN_RATE_MAX_REQUESTS,
+      );
+  if (rateLimited) {
     return c.json(
       { error: "Muitas requisições administrativas; tente novamente em instantes" },
       429,

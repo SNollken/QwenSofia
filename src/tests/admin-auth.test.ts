@@ -96,6 +96,41 @@ test("admin routes rate limit repeated requests per client", async () => {
   }
 });
 
+test("live CAPTCHA traffic does not exhaust the general admin request budget", async () => {
+  setAdminToken("test-admin-token");
+  try {
+    const headers = {
+      "X-Admin-Token": "test-admin-token",
+      "x-forwarded-for": "203.0.113.10",
+    };
+    let captchaResponse: Response | undefined;
+    for (let i = 0; i < 61; i++) {
+      captchaResponse = await app.fetch(
+        new Request(
+          "http://localhost/api/admin/registrations/live-job/captcha",
+          { headers },
+        ),
+      );
+    }
+    assert.notEqual(
+      captchaResponse!.status,
+      429,
+      "live CAPTCHA requests need their own request budget",
+    );
+
+    const overview = await app.fetch(
+      new Request("http://localhost/api/admin/overview", { headers }),
+    );
+    assert.notEqual(
+      overview.status,
+      429,
+      "live CAPTCHA traffic must not consume the general admin budget",
+    );
+  } finally {
+    setAdminToken(SAVED_ADMIN_TOKEN);
+  }
+});
+
 test("assertExposureCredentials enforces credentials on non-loopback binds", () => {
   assertExposureCredentials({ host: "127.0.0.1" });
   assertExposureCredentials({ host: "::1" });
