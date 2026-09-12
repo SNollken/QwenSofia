@@ -147,7 +147,6 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
     <div class="captcha-stage"><img id="captchaImage" alt="CAPTCHA atual do cadastro" draggable="false"></div>
     <div class="notice">CAPTCHA aparece aqui no painel e atualiza automaticamente. A imagem pausa enquanto você arrasta a peça.</div>
     <div class="modal-actions">
-      <button type="button" class="ghost" id="captchaRefreshBtn">Atualizar agora</button>
       <button type="button" class="ghost" id="captchaCloseBtn">Fechar</button>
     </div>
   </div>
@@ -598,7 +597,6 @@ $("#authAllBtn").addEventListener("click", authenticateAll);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
 $("#createBtn").addEventListener("click", () => $("#createDialog").showModal());
 $("#autoBtn").addEventListener("click", autoCreateOne);
-$("#captchaRefreshBtn").addEventListener("click", loadCaptchaImage);
 $("#captchaCloseBtn").addEventListener("click", closeCaptchaDialog);
 $("#captchaDialog").addEventListener("close", resetCaptchaDialog);
 $("#addForm").addEventListener("submit", addAccount);

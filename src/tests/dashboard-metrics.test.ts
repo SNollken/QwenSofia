@@ -75,6 +75,7 @@ test("dashboard opens an interactive CAPTCHA for automatic account creation", ()
   assert.match(dashboardHtml, /CAPTCHA_REFRESH_DELAY_MS = 750/);
   assert.match(dashboardHtml, /Atualização automática ativa/);
   assert.doesNotMatch(dashboardHtml, /setInterval\(loadCaptchaImage/);
+  assert.doesNotMatch(dashboardHtml, /captchaRefreshBtn/);
 });
 
 test("dashboard uses a black-cherry pink palette", () => {
