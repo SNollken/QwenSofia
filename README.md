@@ -417,7 +417,7 @@ O projeto não implementa `/v1/completions` (Completions legacy). O estado de `p
 
 No VPS, o cadastro pode usar um display X11 exclusivo com `ACCOUNT_CREATOR_DISPLAY=:101`. Os serviços em `deploy/systemd/` publicam esse display somente em `127.0.0.1:6080`; encaminhe essa porta pelo mesmo túnel SSH do painel. Assim, o modal mostra o navegador real e recebe o mouse local diretamente, sem depender de capturas periódicas do CAPTCHA.
 
-Para executar o cadastro realmente no Windows, rode uma vez `powershell -ExecutionPolicy Bypass -File deploy/windows/install-local-account-browser.ps1` e acrescente ao host `VPS-tunnel` as linhas `RemoteForward 9222 127.0.0.1:9222` e `RemoteForward 9223 127.0.0.1:9223`. No serviço do VPS, configure `ACCOUNT_CREATOR_LOCAL_HELPER_URL=http://127.0.0.1:9223` e `ACCOUNT_CREATOR_CDP_URL=http://127.0.0.1:9222`. O helper fica invisível; uma janela dedicada do Chrome só aparece quando um cadastro começa.
+Para executar o cadastro realmente no Windows, rode uma vez `powershell -ExecutionPolicy Bypass -File deploy/windows/install-local-account-browser.ps1` e acrescente ao host `VPS-tunnel` as linhas `RemoteForward 19222 127.0.0.1:9222` e `RemoteForward 9223 127.0.0.1:9223`. No serviço do VPS, configure `ACCOUNT_CREATOR_LOCAL_HELPER_URL=http://127.0.0.1:9223` e `ACCOUNT_CREATOR_CDP_URL=http://127.0.0.1:19222`. O helper fica invisível; uma janela dedicada do Chrome só aparece quando um cadastro começa.
 
 ---
 
