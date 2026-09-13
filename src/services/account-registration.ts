@@ -1489,7 +1489,20 @@ async function runRegistration(
 
     // HARD GATE: do not claim "pending email" unless Qwen actually shows activation screen
     // or we are already authenticated. Headless often dies at Access Verification with no email sent.
-    if (await pageShowsAccessVerification(page)) {
+    const postCaptchaDeadline = Date.now() + 15_000;
+    while (
+      Date.now() < postCaptchaDeadline &&
+      (await pageShowsAccessVerification(page)) &&
+      !(await pageShowsActivationPending(page)) &&
+      !(await pageLooksAuthenticated(page))
+    ) {
+      await sleep(500);
+    }
+    if (
+      (await pageShowsAccessVerification(page)) &&
+      !(await pageShowsActivationPending(page)) &&
+      !(await pageLooksAuthenticated(page))
+    ) {
       throw new Error(
         "Qwen manteve o CAPTCHA após a tentativa no painel. Abra o desafio novamente e tente outro arraste.",
       );
