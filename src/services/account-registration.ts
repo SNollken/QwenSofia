@@ -336,6 +336,12 @@ async function openActivationLink(
     ]).catch(() => false);
     await sleep(2_000);
   }
+  if (await pageShowsActivationPending(page)) {
+    await page
+      .reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
+      .catch(() => {});
+    await sleep(2_000);
+  }
 }
 
 
