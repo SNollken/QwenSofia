@@ -19,7 +19,6 @@ import type { QwenAccount } from "../core/accounts.ts";
 import { config } from "../core/config.ts";
 import { maskEmail } from "../core/logger.ts";
 import { Mutex } from "../core/mutex.ts";
-import { QWEN_PRIMARY_MODEL } from "../core/model-registry.ts";
 import {
   clearFingerprintCache,
   getFingerprintProfile,
@@ -727,107 +726,80 @@ async function captureHeaders(accountId: string): Promise<void> {
 
   return new Promise<void>((resolve) => {
     let resolved = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let requestHandler: (request: any) => void;
+    const cleanup = () => {
+      if (timeout) clearTimeout(timeout);
+      page.off("request", requestHandler);
+    };
     const done = () => {
       if (resolved) return;
       resolved = true;
+      cleanup();
       resolve();
     };
 
-    const timeout = setTimeout(async () => {
-      console.warn(`⏱️  [Playwright] Header capture timeout for ${accountId}`);
-      await page
-        .unroute("**/api/v2/chat/completions*", routeHandler)
-        .catch(() => {});
-      done();
-    }, config.timeouts.headers);
-
-    const routeHandler = async (route: any, request: any) => {
+    const capture = (request: any): boolean => {
       if (resolved) {
-        await route.abort("aborted").catch(() => {});
-        return;
+        return true;
       }
 
+      const origin = (() => {
+        try {
+          return new URL(config.qwen.baseUrl).origin;
+        } catch {
+          return "https://chat.qwen.ai";
+        }
+      })();
+      if (!request.url().startsWith(`${origin}/api/`)) return false;
       const reqHeaders = request.headers();
       const captured = capturedQwenHeaders(reqHeaders);
-      if (!captured) {
-        await route.abort("aborted").catch(() => {});
-        return;
-      }
+      if (!captured) return false;
 
-      clearTimeout(timeout);
       cache.headers = captured;
       touchAccountActivity(accountId);
 
       console.log(`✅ [Playwright] Headers captured for ${accountId}`);
-
-      await route.abort("aborted").catch(() => {});
-      await page
-        .unroute("**/api/v2/chat/completions*", routeHandler)
-        .catch(() => {});
-      await sleep(HEADER_CAPTURE_SETTLE_MS);
-      done();
+      resolved = true;
+      cleanup();
+      void sleep(HEADER_CAPTURE_SETTLE_MS).then(() => resolve());
+      return true;
     };
 
-    page
-      .route("**/api/v2/chat/completions*", routeHandler)
-      .then(async () => {
-        try {
-          // Navigate to Qwen and trigger a request that includes bx-* headers.
-          await page.goto("https://chat.qwen.ai/", {
-            waitUntil: "domcontentloaded",
-            timeout: config.timeouts.navigation,
-          });
-          await sleep(1500);
+    requestHandler = (request) => {
+      capture(request);
+    };
+    timeout = setTimeout(() => {
+      console.warn(`⏱️  [Playwright] Header capture timeout for ${accountId}`);
+      done();
+    }, config.timeouts.headers);
+    page.on("request", requestHandler);
 
-          const submitted = await triggerHeaderCaptureRequest(
-            page,
-            () => Boolean(cache.headers["bx-ua"]),
-          );
-
-          if (!submitted) {
-            // Fallback: fire a same-origin fetch so the browser attaches bx/cookie headers.
-            console.warn(
-              `[Playwright] Composer not found for ${accountId}; using fetch fallback for header capture`,
-            );
-            await page
-              .evaluate(async () => {
-                try {
-                  await fetch("https://chat.qwen.ai/api/v2/chat/completions", {
-                    method: "POST",
-                    headers: {
-                      accept: "application/json, text/plain, */*",
-                      "content-type": "application/json",
-                      source: "web",
-                    },
-                    body: JSON.stringify({
-                      model: QWEN_PRIMARY_MODEL,
-                      messages: [{ role: "user", content: "a" }],
-                      stream: false,
-                    }),
-                    credentials: "include",
-                  });
-                } catch {
-                  // aborted by route handler is fine
-                }
-              })
-              .catch(() => {});
-          }
-        } catch (err) {
-          console.warn(`❌ [Playwright] Error triggering request: ${err}`);
-          clearTimeout(timeout);
-          await page
-            .unroute("**/api/v2/chat/completions*", routeHandler)
-            .catch(() => {});
-          done();
-        }
-      })
-      .catch(async (err) => {
-        console.warn(
-          `[Playwright] Error registering header capture route: ${err}`,
-        );
-        clearTimeout(timeout);
+    void (async () => {
+      try {
+        await page.goto("https://chat.qwen.ai/", {
+          waitUntil: "domcontentloaded",
+          timeout: config.timeouts.navigation,
+        });
+        await sleep(1500);
+        if (resolved) return;
+        await page
+          .evaluate(async () => {
+            try {
+              await fetch("/api/v1/auths/", {
+                headers: { accept: "application/json, text/plain, */*", source: "web" },
+                credentials: "include",
+                cache: "no-store",
+              });
+            } catch {
+            }
+          })
+          .catch(() => {});
+      } catch (err) {
+        console.warn(`❌ [Playwright] Error triggering request: ${err}`);
         done();
-      });
+      }
+    })();
   });
 }
 
