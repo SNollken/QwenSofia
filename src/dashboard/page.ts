@@ -216,6 +216,9 @@ function jobCard(j) {
     : (j.state === 'solving-captcha'
       ? '<span class="notice">Use a janela do Chrome aberta neste PC.</span>'
       : '');
+  const localChromeAction = j.localBrowser && j.state !== 'failed' && j.state !== 'completed'
+    ? '<button type="button" class="btn secondary" data-show-chrome="' + esc(j.id) + '">Abrir Chrome</button>'
+    : '';
   return (
     '<article class="card job">' +
       "<div><strong>" + esc(j.email) + '</strong><div class="muted">' + esc(j.message) + "</div>" +
@@ -223,7 +226,7 @@ function jobCard(j) {
       (j.verificationCode ? '<div class="muted">código: ' + esc(j.verificationCode) + '</div>' : '') +
       (j.error ? '<div class="error">' + esc(j.error) + "</div>" : "") +
       "</div>" +
-      '<div class="meta">' + captchaAction + '<span class="badge ' + badgeClass + '">' + esc(j.state) + ready + "</span></div>" +
+      '<div class="meta">' + captchaAction + localChromeAction + '<span class="badge ' + badgeClass + '">' + esc(j.state) + ready + "</span></div>" +
     "</article>"
   );
 }
@@ -678,6 +681,17 @@ $("#jobs").addEventListener("click", (e) => {
   if (!(target instanceof HTMLElement)) return;
   const captchaId = target.getAttribute("data-captcha");
   if (captchaId) openCaptchaDialog(captchaId);
+  if (target.hasAttribute("data-show-chrome")) {
+    target.disabled = true;
+    fetch("http://127.0.0.1:9223/show", { method: "POST" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Não foi possível abrir o Chrome.");
+        if (result.restarted) alert("Chrome reaberto. Se o cadastro anterior falhou ao fechar a janela, inicie um novo cadastro.");
+      })
+      .catch((error) => alert("Não foi possível abrir o Chrome local: " + error.message))
+      .finally(() => { target.disabled = false; });
+  }
 });
 $("#captchaImage").addEventListener("pointerdown", (event) => {
   if (!captchaJobId || captchaSubmitting || !event.currentTarget.src) return;

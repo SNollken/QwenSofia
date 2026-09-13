@@ -4,6 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import { chromium } from "playwright";
 
 const HOST = "127.0.0.1";
 const HELPER_PORT = 9223;
@@ -120,6 +121,31 @@ const server = http.createServer(async (request, response) => {
     try {
       await ensureChrome();
       sendJson(response, 200, { ok: true, chromeReady: true }, origin);
+    } catch (error) {
+      sendJson(
+        response,
+        500,
+        { error: error instanceof Error ? error.message : String(error) },
+        origin,
+      );
+    }
+    return;
+  }
+  if (request.method === "POST" && request.url === "/show") {
+    try {
+      const restarted = !(await isPortOpen(CDP_PORT));
+      await ensureChrome();
+      if (!restarted) {
+        const browser = await chromium.connectOverCDP(`http://${HOST}:${CDP_PORT}`);
+        try {
+          const pages = browser.contexts()[0]?.pages() ?? [];
+          const qwenPage = pages.find((page) => page.url().startsWith("https://chat.qwen.ai/"));
+          await (qwenPage ?? pages[0])?.bringToFront();
+        } finally {
+          await browser.close();
+        }
+      }
+      sendJson(response, 200, { ok: true, chromeReady: true, restarted }, origin);
     } catch (error) {
       sendJson(
         response,
