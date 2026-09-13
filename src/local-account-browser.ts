@@ -135,17 +135,24 @@ const server = http.createServer(async (request, response) => {
     try {
       const restarted = !(await isPortOpen(CDP_PORT));
       await ensureChrome();
-      if (!restarted) {
-        const browser = await chromium.connectOverCDP(`http://${HOST}:${CDP_PORT}`);
-        try {
-          const pages = browser.contexts()[0]?.pages() ?? [];
-          const qwenPage = pages.find((page) => page.url().startsWith("https://chat.qwen.ai/"));
-          await (qwenPage ?? pages[0])?.bringToFront();
-        } finally {
-          await browser.close();
+      const browser = await chromium.connectOverCDP(`http://${HOST}:${CDP_PORT}`);
+      let registrationPageFound = false;
+      try {
+        const context = browser.contexts()[0];
+        const pages = context.pages();
+        const qwenPage = pages.find((page) => page.url().startsWith("https://chat.qwen.ai/"));
+        registrationPageFound = Boolean(qwenPage);
+        if (qwenPage) {
+          await qwenPage.bringToFront();
+        } else {
+          const dashboardPage = pages.find((page) => page.url() === "about:blank") ?? await context.newPage();
+          await dashboardPage.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
+          await dashboardPage.bringToFront();
         }
+      } finally {
+        await browser.close();
       }
-      sendJson(response, 200, { ok: true, chromeReady: true, restarted }, origin);
+      sendJson(response, 200, { ok: true, chromeReady: true, restarted, registrationPageFound }, origin);
     } catch (error) {
       sendJson(
         response,

@@ -217,7 +217,7 @@ function jobCard(j) {
       ? '<span class="notice">Use a janela do Chrome aberta neste PC.</span>'
       : '');
   const localChromeAction = j.localBrowser && j.state !== 'failed' && j.state !== 'completed'
-    ? '<button type="button" class="btn secondary" data-show-chrome="' + esc(j.id) + '">Abrir Chrome</button>'
+    ? '<button type="button" class="btn secondary" data-show-chrome="' + esc(j.id) + '" data-job-state="' + esc(j.state) + '">Abrir Chrome</button>'
     : '';
   return (
     '<article class="card job">' +
@@ -687,7 +687,9 @@ $("#jobs").addEventListener("click", (e) => {
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Não foi possível abrir o Chrome.");
-        if (result.restarted) alert("Chrome reaberto. Se o cadastro anterior falhou ao fechar a janela, inicie um novo cadastro.");
+        if (!result.registrationPageFound && target.getAttribute("data-job-state") === "solving-captcha") {
+          alert("O Chrome abriu no painel, mas a aba do CAPTCHA não existe mais. Este cadastro não pode continuar; inicie um novo.");
+        }
       })
       .catch((error) => alert("Não foi possível abrir o Chrome local: " + error.message))
       .finally(() => { target.disabled = false; });
