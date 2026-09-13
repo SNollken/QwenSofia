@@ -16,7 +16,7 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https
 - **Chat Completions (OpenAI-like)** — Streaming, non-streaming, tools, histórico e multimodal nos formatos tratados pelo projeto.
 - **Responses API (OpenAI-like)** — Texto, function tools, streaming e `previous_response_id` em memória; recursos avançados têm limitações documentadas abaixo.
 - **Compatibilidade Anthropic parcial** — `/v1/messages` oferece texto, streaming e tools básicos, mas ainda não tem paridade total com o SDK/API oficial.
-- **Playwright com stealth** — Captura de headers reais (`bx-ua`, `bx-umidtoken`) por conta com `playwright-extra` e `puppeteer-extra-plugin-stealth`.
+- **Playwright com stealth** — Captura de headers reais (`bx-ua`, `bx-umidtoken`) por conta a partir dos requests autenticados do Qwen (sem enviar mensagem de teste), com `playwright-extra` e `puppeteer-extra-plugin-stealth`.
 - **Anti-bot retry** — Detecção automática de `FAIL_SYS_USER_VALIDATE`/`RGV587_ERROR` com retry e rotação de conta.
 - **Dynamic timeouts** — Timeout baseado no tamanho do payload (`120s + 30s/MB`).
 - **Limites de payload** — Teto de transporte configurável (120 MiB por padrão) e teto de 50 MiB no payload encaminhado ao Qwen.
@@ -24,7 +24,7 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https
 - **Provider público** — O endpoint `/v1/models` identifica o modelo como `QwenSofia` no campo `owned_by`.
 - **Múltiplas contas** — Rotação round-robin, cooldown automático e inicialização paralela.
 - **Aplicação de gerenciamento** — Painel local (`/`) e janela desktop para listar, adicionar, autenticar, remover e acompanhar contas.
-- **Cadastro assistido** — Preenche o cadastro do Qwen, mostra o CAPTCHA no painel para a verificação humana e incorpora a sessão confirmada ao pool.
+- **Cadastro assistido** — Preenche o cadastro do Qwen, mostra o CAPTCHA no Chrome local/painel para a verificação humana, confirma o e-mail e incorpora a sessão validada ao pool.
 - **Criação automática de contas (dependente do upstream)** — Quando todas as contas ficam indisponíveis, tenta criar e autenticar uma nova conta. O resultado depende do fluxo atual do Qwen, CAPTCHA e e-mail temporário.
 - **Auto-auth no pool** — Contas adicionadas/criadas pelo painel ou API entram autenticadas no pool (Playwright).
 - **Persistência de sessão** — Cookies/JWT do Qwen persistidos por conta no SQLite.
@@ -206,14 +206,27 @@ Quando o pool inteiro está em cooldown/rate limit (ou não há contas):
 
 1. O proxy **não força** limpar cooldowns (com auto-create ativo)
 2. Dispara o criador automático **completo**
-3. Gera um e-mail temporário e preenche o cadastro no Qwen
-4. Pausa no CAPTCHA atual e o apresenta no painel para o arraste manual; depois verifica o e-mail e captura cookies/sessão
-5. Só marca `ready=true` depois do Playwright do pool autenticar de verdade
+3. Gera um e-mail temporário e preenche o cadastro no Qwen. Os provedores são tentados nesta ordem: `temp-mail.org`, `tuamaeaquelaursa.com`, `mail.tm` e, por fim, Guerrilla Mail.
+4. Pausa no CAPTCHA atual e o apresenta no Chrome local/painel para o arraste manual; depois recarrega a aba original após a ativação e captura cookies/sessão.
+5. Só marca `ready=true` depois do Playwright do pool autenticar de verdade e capturar `bx-ua`.
 6. **Retenta a request** com a conta nova
 
 Esse fluxo não é garantido: mudanças no site do Qwen, bloqueios anti-bot, indisponibilidade do provedor de e-mail ou CAPTCHA podem interrompê-lo. Se houver CAPTCHA, o job fica aguardando no painel até o arraste humano. A conta **não** entra no pool até uma sessão autenticada ser capturada.
 
 Desative com `ACCOUNT_CREATOR_ENABLED=false`.
+
+### Cadastro no Chrome local
+
+Em um VPS, o CAPTCHA deve ser resolvido no Chrome do PC que tem a saída local. Instale o helper uma vez no Windows e mantenha o túnel SSH com estes forwards:
+
+```text
+RemoteForward 19222 127.0.0.1:9222
+RemoteForward 9223 127.0.0.1:9223
+```
+
+No serviço do VPS, use `ACCOUNT_CREATOR_LOCAL_HELPER_URL=http://127.0.0.1:9223` e `ACCOUNT_CREATOR_CDP_URL=http://127.0.0.1:19222`. O helper reutiliza ou reabre a janela dedicada do Chrome; o botão **Abrir Chrome** do painel também pode ser usado se a janela for fechada. O timeout local do CAPTCHA é de pelo menos 30 minutos. Depois do arraste, a confirmação do e-mail, a recarga da aba e a autenticação do pool continuam automáticas.
+
+Uma conta só está pronta quando o job termina em `completed` com `ready:true` e a conta aparece no overview com `authenticated:true` e `runtime.hasHeaders:true`. CAPTCHA aceito, cookies presentes ou a tela de chat aberta isoladamente não são suficientes.
 
 ---
 
@@ -289,7 +302,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 | Variável | Default | Descrição |
 |---|---|---|
 | `ACCOUNT_CREATOR_ENABLED` | `true` | Cria conta nova quando o pool está esgotado (rate limit/cooldown/vazio). |
-| `ACCOUNT_CREATOR_TIMEOUT_MS` | `600000` | Timeout máximo por cadastro (CAPTCHA/e-mail podem demorar). |
+| `ACCOUNT_CREATOR_TIMEOUT_MS` | `600000` | Timeout máximo por cadastro (CAPTCHA/e-mail podem demorar); no modo Chrome local o CAPTCHA recebe pelo menos 30 minutos. |
 | `ACCOUNT_CREATOR_COOLDOWN_MS` | `30000` | Intervalo mínimo entre criações automáticas. |
 | `ACCOUNT_CREATOR_MAX_BATCH` | `5` | Máximo de contas por chamada manual/batch. |
 | `ACCOUNT_CREATOR_AUTO_AUTH` | `true` | Autentica automaticamente ao adicionar conta via admin/API. |
@@ -569,6 +582,7 @@ QwenSofia/
 | Problema | Solução |
 |---|---|
 | Anti-bot bloqueando | Refaça login da conta e verifique se o Playwright está capturando headers |
+| Muitas requisições administrativas | Aguarde o intervalo do limitador e deixe o poll interno do job trabalhar |
 | Quota exceeded | Adicione mais contas ou espere cooldown |
 | Timeout em requests grandes | Aumente `TOTAL_REQUEST_TIMEOUT` |
 | Playwright não inicia | Execute `npx playwright install chromium` |
