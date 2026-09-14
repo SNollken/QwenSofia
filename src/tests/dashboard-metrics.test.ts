@@ -3,21 +3,16 @@ import assert from "node:assert/strict";
 import { dashboardHtml } from "../dashboard/page.ts";
 import { remoteBrowserHtml } from "../dashboard/remote-browser.ts";
 
-test("dashboard Métricas renders an in-panel health view", () => {
-  assert.match(
-    dashboardHtml,
-    /<button type="button" id="metricsBtn">Métricas<\/button>/,
-    "Métricas must be an in-panel navigation control",
-  );
+test("dashboard renders metrics on the main accounts page", () => {
   assert.doesNotMatch(
     dashboardHtml,
-    /onclick="location\.href='\/metrics'"/,
-    "Métricas must not navigate to the protected Prometheus text endpoint",
+    /id="metricsBtn"/,
+    "Métricas must not require a separate panel",
   );
   assert.match(
     dashboardHtml,
-    /id="metricsView"/,
-    "dashboard must provide a rendered metrics view",
+    /<section class="metrics">/,
+    "dashboard must render metrics within the main page",
   );
   assert.match(
     dashboardHtml,
@@ -29,6 +24,10 @@ test("dashboard Métricas renders an in-panel health view", () => {
     /metricCard\("Navegadores", runtime\.initialized/,
     "initialized browsers must be the primary account runtime metric",
   );
+  assert.doesNotMatch(dashboardHtml, /metricCard\("Estado"/);
+  assert.doesNotMatch(dashboardHtml, /metricCard\("Cache"/);
+  assert.match(dashboardHtml, /id="activeAccountsSection"/);
+  assert.match(dashboardHtml, /Contas atendendo requests/);
 });
 
 test("dashboard omits the obsolete configuration control", () => {
@@ -62,9 +61,10 @@ test("dashboard groups the pool into responsive account cards", () => {
 });
 
 test("dashboard offers a confirmed bulk authentication action", () => {
-  assert.match(dashboardHtml, /id="authAllBtn">Autenticar todas/);
+  assert.match(dashboardHtml, /id="authAllBtn"><svg class="btn-icon"[^>]*>.*?<\/svg>Autenticar todas/);
   assert.match(dashboardHtml, /accounts\/authenticate-all/);
   assert.match(dashboardHtml, /uma por vez/);
+  assert.match(dashboardHtml, /button\.innerHTML = lockIcon \+ "Autenticar todas"/);
 });
 
 test("dashboard declares a QwenSofia favicon", () => {
@@ -100,6 +100,13 @@ test("dashboard uses a black-cherry pink palette", () => {
   );
   assert.doesNotMatch(dashboardHtml, /class="account-mark"/);
   assert.doesNotMatch(dashboardHtml, /class="avatar"/);
+});
+
+test("dashboard reuses the menu's outline SVG language in the controls", () => {
+  assert.match(dashboardHtml, /class="brand-icon"/);
+  assert.match(dashboardHtml, /<svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24">/);
+  assert.match(dashboardHtml, /id="authAllBtn"><svg class="btn-icon"/);
+  assert.match(dashboardHtml, /id="createBtn"><svg class="btn-icon"/);
 });
 
 test("dashboard refreshes metrics automatically and exposes concurrency control", () => {

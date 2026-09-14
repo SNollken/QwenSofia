@@ -5,7 +5,7 @@ export const dashboardHtml = `<!doctype html>
 *{box-sizing:border-box}body{min-height:100vh;margin:0;background:radial-gradient(66rem 42rem at 105% -18%,rgba(225,74,136,.16),transparent 56%),radial-gradient(50rem 34rem at -15% 100%,rgba(124,48,89,.1),transparent 58%),linear-gradient(145deg,#09090b 0%,#0d0b10 48%,#111013 100%);color:var(--text);font:14px ui-sans-serif,Segoe UI,Arial,sans-serif;letter-spacing:.005em}
 button,input{font:inherit}
 .top{min-height:76px;border-bottom:1px solid rgba(200,161,187,.14);display:flex;align-items:center;justify-content:space-between;padding:0 max(28px,calc((100vw - 1180px)/2));background:rgba(9,9,11,.78);backdrop-filter:blur(18px);position:sticky;top:0;z-index:2}
-.brand{display:flex;align-items:center;font-weight:760;font-size:18px;letter-spacing:-.02em}.brand-copy{display:flex;align-items:center;gap:10px}
+.brand{display:flex;align-items:center;font-weight:760;font-size:18px;letter-spacing:-.02em}.brand-copy{display:flex;align-items:center;gap:10px}.brand-icon{width:28px;height:28px;display:grid;place-items:center;color:#ffadd0;border:1px solid rgba(255,150,193,.3);border-radius:8px;background:var(--accent-soft)}
 .endpoint{color:#d5cad5;font:12px ui-monospace,monospace;border:1px solid rgba(201,163,188,.22);border-radius:999px;padding:6px 10px;background:rgba(29,23,31,.76)}
 .nav{display:flex;gap:5px;padding:4px;border:1px solid rgba(201,163,188,.16);border-radius:12px;background:rgba(24,20,26,.74)}
 .nav button,.ghost{color:#c6bbc6;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 13px;cursor:pointer;transition:.16s ease}
@@ -13,7 +13,7 @@ button,input{font:inherit}
 .wrap{max-width:1180px;margin:0 auto;padding:34px 28px 48px}
 .muted{color:var(--muted)}
 .actions{display:flex;gap:9px;flex-wrap:wrap}
-.btn{border:1px solid rgba(255,167,204,.4);border-radius:10px;padding:10px 14px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff;font-weight:750;cursor:pointer;box-shadow:0 8px 18px rgba(213,61,123,.19);transition:transform .16s ease,filter .16s ease}.btn:hover{filter:brightness(1.07);transform:translateY(-1px)}.btn:disabled{cursor:wait;opacity:.7;transform:none}
+.btn{border:1px solid rgba(255,167,204,.4);border-radius:10px;padding:10px 14px;background:linear-gradient(135deg,var(--accent-start),var(--accent-end));color:#fff;font-weight:750;cursor:pointer;box-shadow:0 8px 18px rgba(213,61,123,.19);transition:transform .16s ease,filter .16s ease}.btn:hover{filter:brightness(1.07);transform:translateY(-1px)}.btn:disabled{cursor:wait;opacity:.7;transform:none}.btn-icon{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px;margin-right:6px}
 .btn.secondary{color:#eee6ee;background:rgba(42,34,45,.84);border-color:#4a394c;box-shadow:none}.btn.danger{background:rgba(103,41,58,.7);color:#ffe2e8;border-color:#81465a;box-shadow:none}
 .section-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:0 0 16px;flex-wrap:wrap}.section-head h2{margin:0 0 5px;font-size:24px;letter-spacing:-.035em}.section-kicker{color:#ff9ac2;font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;margin:0 0 8px}
 .grid{display:grid;gap:10px}.accounts-grid{grid-template-columns:repeat(auto-fill,minmax(330px,1fr));align-items:stretch}
@@ -39,18 +39,13 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
 .captcha-stage{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#111;margin:16px 0}.captcha-stage iframe{display:block;width:100%;height:min(70vh,720px);border:0}.captcha-stage img{display:block;width:100%;touch-action:none;user-select:none;cursor:grab}.captcha-stage img.dragging{cursor:grabbing}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 [hidden]{display:none !important}
-.jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(202,164,188,.16)}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#d2c6d1;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#ffadd0;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
+.jobs{margin-top:36px;padding-top:30px;border-top:1px solid rgba(202,164,188,.16)}.metrics{margin:0 0 36px}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:12px}.metric-card{position:relative;overflow:hidden;align-items:start;display:grid;gap:8px;min-height:144px;padding:18px}.metric-card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--accent-start),var(--accent-end))}.metric-card:nth-child(1)::after{background:var(--green)}.metric-card:nth-child(3)::after{background:var(--yellow)}.metric-value{font-size:27px;letter-spacing:-.04em}.metric-label{color:#d2c6d1;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.075em}.metric-action{align-self:end;justify-self:start;padding:0;border:0;background:transparent;color:#ffadd0;font-weight:750;cursor:pointer}.metric-action:hover{color:#fff;text-decoration:underline}
 @media(max-width:680px){.top{padding:12px 16px;gap:12px;align-items:flex-start;flex-direction:column}.brand-copy{flex-wrap:wrap}.wrap{padding:24px 16px 36px}.section-head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.accounts-grid{grid-template-columns:1fr}.card{align-items:flex-start;flex-direction:column}.card .meta{width:100%}.nav{width:100%}.nav button{flex:1}.endpoint{font-size:11px}}
 </style></head><body>
 <header class="top">
-  <div class="brand"><span class="brand-copy">QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
-  <nav class="nav">
-    <button type="button" class="active" id="accountsBtn">Contas</button>
-    <button type="button" id="metricsBtn">Métricas</button>
-  </nav>
+  <div class="brand"><span class="brand-copy"><span class="brand-icon" aria-hidden="true"><svg class="btn-icon" style="margin:0" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg></span>QwenSofia <span class="endpoint" id="endpoint">127.0.0.1</span></span></div>
 </header>
 <main class="wrap">
-  <div id="accountsView">
     <div class="section-head">
       <div>
         <div class="section-kicker">Gerenciamento do pool</div>
@@ -58,13 +53,22 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
         <div class="muted" id="summary">Carregando contas…</div>
       </div>
       <div class="actions">
-        <button type="button" class="btn secondary" id="refreshBtn">Atualizar</button>
-        <button type="button" class="btn secondary" id="authAllBtn">Autenticar todas</button>
-        <button type="button" class="btn secondary" id="addBtn">Adicionar conta</button>
-        <button type="button" class="btn secondary" id="autoBtn">Criar automática</button>
-        <button type="button" class="btn" id="createBtn">Criar conta</button>
+        <button type="button" class="btn secondary" id="refreshBtn"><svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0 2 5.5"></path><polyline points="20 4 20 11 13 11"></polyline></svg>Atualizar</button>
+        <button type="button" class="btn secondary" id="authAllBtn"><svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Autenticar todas</button>
+        <button type="button" class="btn secondary" id="addBtn"><svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"></rect><line x1="4" y1="10" x2="20" y2="10"></line></svg>Adicionar conta</button>
+        <button type="button" class="btn secondary" id="autoBtn"><svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><circle cx="5" cy="6" r="1"></circle><circle cx="19" cy="8" r="1"></circle><circle cx="17" cy="17" r="1"></circle><circle cx="6" cy="16" r="1"></circle></svg>Criar automática</button>
+        <button type="button" class="btn" id="createBtn"><svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line></svg>Criar conta</button>
       </div>
     </div>
+
+    <section class="metrics">
+      <div class="section-head"><div><div class="section-kicker">Visão em tempo real</div><h2>Métricas do serviço</h2><div class="muted" id="metricsUpdated">Carregando métricas…</div></div></div>
+      <div id="metricsCards" class="metric-grid"></div>
+    </section>
+    <section id="activeAccountsSection" class="metrics" hidden>
+      <div class="section-head"><div><div class="section-kicker">Em processamento</div><h2>Contas atendendo requests</h2><div class="muted">Atualizado junto com as métricas do serviço.</div></div></div>
+      <div id="activeAccounts" class="grid accounts-grid"></div>
+    </section>
 
     <section id="accounts" class="grid accounts-grid"></section>
 
@@ -78,18 +82,6 @@ input{background:#151118;border:1px solid var(--line);border-radius:8px;color:va
       </div>
       <div id="jobs" class="grid"></div>
     </section>
-  </div>
-
-  <section id="metricsView" hidden>
-    <div class="section-head">
-      <div>
-        <div class="section-kicker">Visão em tempo real</div>
-        <h2>Métricas do serviço</h2>
-        <div class="muted" id="metricsUpdated">Carregando métricas…</div>
-      </div>
-    </div>
-    <div id="metricsCards" class="metric-grid"></div>
-  </section>
 </main>
 
 <dialog id="accountDialog">
@@ -440,39 +432,31 @@ async function cancelCaptchaPointer() {
   } catch {}
 }
 
-function showView(view) {
-  activeView = view;
-  const metrics = view === "metrics";
-  $("#accountsView").hidden = metrics;
-  $("#metricsView").hidden = !metrics;
-  $("#accountsBtn").classList.toggle("active", !metrics);
-  $("#metricsBtn").classList.toggle("active", metrics);
+function activeAccountCard(account, usage) {
+  const active = usage.activeRequests || 0;
+  const queued = usage.queuedRequests || 0;
+  return '<article class="card"><div class="identity"><strong class="account-email">' + esc(account ? account.email : usage.accountId) + '</strong><div class="muted account-id">' + esc(usage.accountId) + '</div></div><div class="meta"><span class="badge">' + active + ' request' + (active === 1 ? '' : 's') + '</span>' + (queued ? '<span class="badge cool">' + queued + ' na fila</span>' : '') + '</div></article>';
 }
 
-async function loadMetrics() {
-  try {
-    const d = await api("/health");
-    const runtime = d.accountRuntime || {};
-    const concurrency = d.accountConcurrency || {};
-    const cache = (d.metrics && d.metrics.cache) || {};
-    const cards = [
-      metricCard("Estado", d.status || "desconhecido", "Saúde geral do QwenSofia"),
-      metricCard("Navegadores", runtime.initialized || 0, (runtime.withHeaders || 0) + " com bx-ua em cache"),
-      metricCard("Requisições", concurrency.activeRequests || 0, (concurrency.queuedRequests || 0) + " aguardando na fila"),
-      metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0), '<button type="button" class="metric-action" id="concurrencyBtn">Alterar limite</button>'),
-      metricCard("Cache", cache.connected ? "Conectado" : "Indisponível", (cache.keysCount || 0) + " chave(s) · " + (cache.memoryUsage || "0KB")),
-    ];
-    $("#metricsCards").innerHTML = cards.join("");
-    $("#metricsUpdated").textContent = "Atualizado em " + new Date(d.timestamp || Date.now()).toLocaleString("pt-BR");
-  } catch (e) {
-    $("#metricsUpdated").innerHTML = '<span class="error">' + esc(e.message) + '</span>';
-    $("#metricsCards").innerHTML = '<div class="empty">Não foi possível carregar as métricas.</div>';
-  }
+function renderMetrics(d, accounts) {
+  const runtime = d.accountRuntime || {};
+  const concurrency = d.accountConcurrency || {};
+  const cards = [
+    metricCard("Navegadores", runtime.initialized || 0, (runtime.withHeaders || 0) + " com bx-ua em cache"),
+    metricCard("Requisições", concurrency.activeRequests || 0, (concurrency.queuedRequests || 0) + " aguardando na fila"),
+    metricCard("Concorrência", concurrency.limitPerAccount || 0, "limite por conta · pico " + (concurrency.peakActivePerAccount || 0), '<button type="button" class="metric-action" id="concurrencyBtn">Alterar limite</button>'),
+  ];
+  $("#metricsCards").innerHTML = cards.join("");
+  $("#metricsUpdated").textContent = "Atualizado em " + new Date(d.timestamp || Date.now()).toLocaleString("pt-BR");
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const active = (concurrency.accounts || []).filter((usage) => usage.activeRequests > 0 || usage.queuedRequests > 0);
+  $("#activeAccountsSection").hidden = active.length === 0;
+  $("#activeAccounts").innerHTML = active.map((usage) => activeAccountCard(byId.get(usage.accountId), usage)).join("");
 }
 
 async function load() {
   try {
-    const d = await api("/api/admin/overview");
+    const [d, health] = await Promise.all([api("/api/admin/overview"), api("/health").catch((error) => error)]);
     const base = (d.proxy && d.proxy.baseUrl) || (location.origin + "/v1");
     $("#endpoint").textContent = base.endsWith("/v1") ? base.slice(0, -3) : base;
 
@@ -484,6 +468,10 @@ async function load() {
       else acText = ac.message || "auto-create ativo";
     }
     const accounts = Array.isArray(d.accounts) ? d.accounts : [];
+    if (health instanceof Error) {
+      $("#metricsUpdated").innerHTML = '<span class="error">' + esc(health.message) + '</span>';
+      $("#metricsCards").innerHTML = '<div class="empty">Não foi possível carregar as métricas.</div>';
+    } else renderMetrics(health, accounts);
     updateBulkAuthentication(d.bulkAuthentication);
     const registrations = Array.isArray(d.registrations) ? d.registrations : [];
     $("#summary").textContent = accounts.length + " conta(s) salva(s) — " + acText;
@@ -606,7 +594,7 @@ async function saveConcurrency(e) {
       body: JSON.stringify({ maxConcurrent: value }),
     });
     $("#concurrencyDialog").close();
-    loadMetrics();
+    load();
   } catch (x) {
     alert(x.message);
   }
@@ -614,13 +602,14 @@ async function saveConcurrency(e) {
 
 function updateBulkAuthentication(status) {
   const button = $("#authAllBtn");
+  const lockIcon = '<svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
   if (!status || !status.running) {
     button.disabled = false;
-    button.textContent = "Autenticar todas";
+    button.innerHTML = lockIcon + "Autenticar todas";
     return;
   }
   button.disabled = true;
-  button.textContent = "Autenticando " + status.completed + "/" + status.total;
+  button.innerHTML = lockIcon + "Autenticando " + status.completed + "/" + status.total;
 }
 
 async function saveConcurrencyAndRestart() {
@@ -646,14 +635,6 @@ async function saveConcurrencyAndRestart() {
 }
 
 // Event bindings (no inline handlers for critical actions)
-$("#accountsBtn").addEventListener("click", () => {
-  showView("accounts");
-  load();
-});
-$("#metricsBtn").addEventListener("click", () => {
-  showView("metrics");
-  loadMetrics();
-});
 $("#refreshBtn").addEventListener("click", load);
 $("#authAllBtn").addEventListener("click", authenticateAll);
 $("#addBtn").addEventListener("click", () => $("#accountDialog").showModal());
@@ -730,6 +711,6 @@ $("#metricsCards").addEventListener("click", (e) => {
 });
 
 load();
-setInterval(() => activeView === "metrics" ? loadMetrics() : load(), 30000);
+setInterval(load, 30000);
 </script>
 </body></html>`;

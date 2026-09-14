@@ -316,6 +316,10 @@ test("Account slots queue FIFO, isolate accounts, and release idempotently", asy
   assert.equal(getAccountRequestCount("slots-fifo"), 2);
   assert.equal(getAccountRequestCount("slots-other"), 1);
   assert.equal(getAccountConcurrencyStats().queuedRequests, 1);
+  assert.deepEqual(getAccountConcurrencyStats().accounts, [
+    { accountId: "slots-fifo", activeRequests: 2, queuedRequests: 1 },
+    { accountId: "slots-other", activeRequests: 1, queuedRequests: 0 },
+  ]);
   first();
   first();
   const third = await waiting;

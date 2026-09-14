@@ -22,11 +22,17 @@ export function getAccountRequestCount(accountId: string): number {
 }
 
 export function getAccountConcurrencyStats() {
+  const accounts = Array.from(usage, ([accountId, item]) => ({
+    accountId,
+    activeRequests: item.active,
+    queuedRequests: item.waiting.length,
+  }));
   return {
     limitPerAccount: config.accountRequests.maxConcurrent,
-    activeRequests: Array.from(usage.values()).reduce((sum, item) => sum + item.active, 0),
-    queuedRequests: Array.from(usage.values()).reduce((sum, item) => sum + item.waiting.length, 0),
+    activeRequests: accounts.reduce((sum, item) => sum + item.activeRequests, 0),
+    queuedRequests: accounts.reduce((sum, item) => sum + item.queuedRequests, 0),
     peakActivePerAccount,
+    accounts,
   };
 }
 
