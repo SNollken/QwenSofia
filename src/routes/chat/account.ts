@@ -1007,7 +1007,9 @@ async function createStreamWithRetry(
         err.upstreamStatus >= 500 &&
         !isQwenInternalError
       ) {
-        markAccountRateLimited(accountId, undefined, "ServerError");
+        // Upstream 5xx is transient infrastructure pain, not an exhausted
+        // account quota — a short cooldown keeps the pool usable.
+        markAccountRateLimited(accountId, 10 * 60 * 1000, "ServerError");
         console.warn(
           `⚠️  [Chat] Account ${accountEmail} (${accountId}) returned server error. Marked for cooldown.`,
         );

@@ -267,6 +267,17 @@ function runMigrations(db: Database.Database): void {
       instruction_hash TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Responses API (previous_response_id) persistence: survives restarts
+    CREATE TABLE IF NOT EXISTS responses_store (
+      response_id TEXT PRIMARY KEY,
+      chat_messages TEXT NOT NULL,
+      response TEXT NOT NULL,
+      stored_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_responses_store_stored_at
+      ON responses_store(stored_at);
   `);
 
   // Cooldown persistence columns — wrapped in try-catch because
