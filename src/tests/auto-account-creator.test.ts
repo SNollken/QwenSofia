@@ -23,6 +23,7 @@ import {
   areAllAccountsUnavailable,
   countAvailableAccounts,
   getAutoCreateStatus,
+  isAccountCreationAllowed,
 } from "../services/auto-account-creator.ts";
 import { config } from "../core/config.ts";
 
@@ -106,6 +107,14 @@ test("AutoCreator: status exposes config flags", () => {
   assert.strictEqual(typeof status.busy, "boolean");
   assert.strictEqual(typeof status.message, "string");
   assert.ok(status.cooldownRemainingMs >= 0);
+});
+
+test("AutoCreator: disabled automatic trigger still allows explicit manual creation", () => {
+  assert.strictEqual(config.accountCreator.enabled, false);
+  assert.strictEqual(isAccountCreationAllowed("no-accounts"), false);
+  assert.strictEqual(isAccountCreationAllowed("all-cooldown"), false);
+  assert.strictEqual(isAccountCreationAllowed("rate-limit"), false);
+  assert.strictEqual(isAccountCreationAllowed("manual"), true);
 });
 
 test("AutoCreator: opens signup while Qwen splash intercepts normal clicks", async () => {

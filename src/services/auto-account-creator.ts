@@ -22,6 +22,10 @@ export type AutoCreateTrigger =
   | "all-cooldown"
   | "no-accounts";
 
+export function isAccountCreationAllowed(trigger: AutoCreateTrigger): boolean {
+  return trigger === "manual" || config.accountCreator.enabled;
+}
+
 export interface AutoCreateStatus {
   enabled: boolean;
   busy: boolean;
@@ -146,7 +150,7 @@ async function runAutoCreate(
   trigger: AutoCreateTrigger,
   count = 1,
 ): Promise<AutoCreateResult> {
-  if (!config.accountCreator.enabled) {
+  if (!isAccountCreationAllowed(trigger)) {
     return {
       started: false,
       skippedReason: "Criação automática de contas desativada.",

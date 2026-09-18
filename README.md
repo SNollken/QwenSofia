@@ -25,7 +25,7 @@ O **QwenSofia** é uma distribuição independente baseada no [QwenBridge](https
 - **Múltiplas contas** — Rotação round-robin, cooldown automático e inicialização paralela.
 - **Aplicação de gerenciamento** — Painel local (`/`) e janela desktop para listar, adicionar, autenticar, remover e acompanhar contas.
 - **Cadastro assistido** — Preenche o cadastro do Qwen, mostra o CAPTCHA no Chrome local/painel para a verificação humana, confirma o e-mail e incorpora a sessão validada ao pool.
-- **Criação automática de contas (dependente do upstream)** — Quando todas as contas ficam indisponíveis, tenta criar e autenticar uma nova conta. O resultado depende do fluxo atual do Qwen, CAPTCHA e e-mail temporário.
+- **Criação de contas sob demanda (dependente do upstream)** — Só tenta criar e autenticar uma nova conta quando alguém confirma o botão de criação automática. O resultado depende do fluxo atual do Qwen, CAPTCHA e e-mail temporário.
 - **Auto-auth no pool** — Contas adicionadas/criadas pelo painel ou API entram autenticadas no pool (Playwright).
 - **Persistência de sessão** — Cookies/JWT do Qwen persistidos por conta no SQLite.
 - **Uploads multimodais** — Imagens, vídeo, áudio e documentos enviados ao OSS do Qwen.
@@ -213,7 +213,7 @@ Quando o pool inteiro está em cooldown/rate limit (ou não há contas):
 
 Esse fluxo não é garantido: mudanças no site do Qwen, bloqueios anti-bot, indisponibilidade do provedor de e-mail ou CAPTCHA podem interrompê-lo. Se houver CAPTCHA, o job fica aguardando no painel até o arraste humano. A conta **não** entra no pool até uma sessão autenticada ser capturada.
 
-Desative com `ACCOUNT_CREATOR_ENABLED=false`.
+O padrão é `ACCOUNT_CREATOR_ENABLED=false`: o cadastro só começa pelo botão **Criar automática** (ou pela chamada manual da API). Defina `true` apenas para permitir que o próprio fluxo de chat inicie um cadastro quando o pool estiver esgotado.
 
 ### Cadastro no Chrome local
 
@@ -301,7 +301,7 @@ O Playwright também aplica um fingerprint estável por conta (UA Chrome 149, lo
 
 | Variável | Default | Descrição |
 |---|---|---|
-| `ACCOUNT_CREATOR_ENABLED` | `true` | Cria conta nova quando o pool está esgotado (rate limit/cooldown/vazio). |
+| `ACCOUNT_CREATOR_ENABLED` | `false` | Permite criar conta espontaneamente quando o pool está esgotado. O botão manual continua disponível quando está `false`. |
 | `ACCOUNT_CREATOR_TIMEOUT_MS` | `600000` | Timeout máximo por cadastro (CAPTCHA/e-mail podem demorar); no modo Chrome local o CAPTCHA recebe pelo menos 30 minutos. |
 | `ACCOUNT_CREATOR_COOLDOWN_MS` | `30000` | Intervalo mínimo entre criações automáticas. |
 | `ACCOUNT_CREATOR_MAX_BATCH` | `5` | Máximo de contas por chamada manual/batch. |

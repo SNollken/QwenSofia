@@ -115,7 +115,7 @@ const envSchema = z
     SESSION_KEEP_ALIVE_IDLE_MS: z.string().default("120000"),
     SESSION_KEEP_ALIVE_NAVIGATION_INTERVAL_MS: z.string().default("480000"),
     // Automatic account creator (rate-limit / pool empty)
-    ACCOUNT_CREATOR_ENABLED: z.string().default("true"),
+    ACCOUNT_CREATOR_ENABLED: z.string().default("false"),
     ACCOUNT_CREATOR_TIMEOUT_MS: z.string().default("600000"),
     ACCOUNT_CREATOR_COOLDOWN_MS: z.string().default("30000"),
     ACCOUNT_CREATOR_MAX_BATCH: z.string().default("5"),
