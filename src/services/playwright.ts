@@ -410,6 +410,8 @@ export async function initPlaywrightForAccount(
     const acctContext = await engineToUse.launchPersistentContext(profilePath, {
       headless,
       channel,
+      // ponytail: SOCKS proxy for Tor exit diversity; upgrade to per-account proxy if needed
+      ...(process.env.PLAYWRIGHT_PROXY ? { proxy: { server: process.env.PLAYWRIGHT_PROXY } } : {}),
       userAgent: fingerprint.userAgent,
       locale: fingerprint.locale,
       timezoneId: fingerprint.timezoneId,
