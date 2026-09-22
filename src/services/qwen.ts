@@ -618,7 +618,7 @@ function buildQwenSettingsUpdatePayload(
         : {}),
       name: "",
       description:
-        "Always follow the active personalized instructions. Always think in English, and always answer in the language of the user's question. Always remember and consider the full conversation history and context when responding.",
+        "Siga sempre as instruções personalizadas ativas. Pense e responda SEMPRE em Português do Brasil (PT-BR). Lembre-se sempre de considerar todo o histórico e contexto da conversa ao responder.",
       style: null,
       instruction,
       enable_for_new_chat: true,
