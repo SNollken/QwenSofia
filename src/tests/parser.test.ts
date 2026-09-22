@@ -1008,3 +1008,74 @@ test("StreamingToolParser: parses JSON-stringified nested argument fields", () =
   );
   assert.deepStrictEqual(result.toolCalls[0].arguments.edits, edits);
 });
+
+test("StreamingToolParser: parses Qwen-Agent function and parameter XML format", () => {
+  const parser = new StreamingToolParser(TERMINAL_TOOLS);
+  const output =
+    "<function=terminal>\n<parameter=command>ls -la</parameter>\n</function>";
+  const result = parser.feed(output);
+  const tail = parser.flush();
+  const calls = [...result.toolCalls, ...tail.toolCalls];
+
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].name, "terminal");
+  assert.deepStrictEqual(calls[0].arguments, { command: "ls -la" });
+  assert.strictEqual(result.text + tail.text, "");
+});
+
+test("StreamingToolParser: parses parameter shorthand with spaces and Unix path", () => {
+  const parser = new StreamingToolParser(TERMINAL_TOOLS);
+  const output =
+    "<function=terminal>\n<parameter=command>find /home/opc/.hermes/sessions/ -name \"*.json\"</parameter>\n<parameter=mode>foreground</parameter>\n</function>";
+  const result = parser.feed(output);
+  const tail = parser.flush();
+  const calls = [...result.toolCalls, ...tail.toolCalls];
+
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].name, "terminal");
+  assert.deepStrictEqual(calls[0].arguments, {
+    command: 'find /home/opc/.hermes/sessions/ -name "*.json"',
+    mode: "foreground",
+  });
+  assert.strictEqual(result.text + tail.text, "");
+});
+
+test("StreamingToolParser: Qwen-Agent function envelopes are safe across all split points", () => {
+  const output =
+    "<function=terminal>\n<parameter=command>find /home/opc/.hermes/sessions/ -name \"*.json\"</parameter>\n</function>";
+  for (let split = 0; split <= output.length; split++) {
+    const parser = new StreamingToolParser(TERMINAL_TOOLS);
+    const first = parser.feed(output.slice(0, split));
+    if (split < output.length) {
+      assert.strictEqual(
+        first.toolCalls.length,
+        0,
+        "premature tool call at split " + split,
+      );
+    }
+    const second = parser.feed(output.slice(split));
+    const tail = parser.flush();
+    const calls = [...first.toolCalls, ...second.toolCalls, ...tail.toolCalls];
+
+    assert.strictEqual(calls.length, 1, "split " + split + " call count");
+    assert.strictEqual(calls[0].name, "terminal");
+    assert.deepStrictEqual(calls[0].arguments, {
+      command: 'find /home/opc/.hermes/sessions/ -name "*.json"',
+    });
+    assert.strictEqual(first.text + second.text + tail.text, "");
+  }
+});
+
+test("StreamingToolParser: regression - standard JSON tool_call format still works", () => {
+  const parser = new StreamingToolParser(TERMINAL_TOOLS);
+  const output =
+    '<tool_call>{"name":"terminal","arguments":{"command":"ls -la"}}</tool_call>';
+  const result = parser.feed(output);
+  const tail = parser.flush();
+  const calls = [...result.toolCalls, ...tail.toolCalls];
+
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].name, "terminal");
+  assert.deepStrictEqual(calls[0].arguments, { command: "ls -la" });
+  assert.strictEqual(result.text + tail.text, "");
+});

@@ -190,7 +190,7 @@ function findNextToolOpenTagOutsideMarkdownCode(
       const match = buffer
         .substring(i)
         .match(
-          /^(?:<tool>|<tool_calls>|<tool_calling>|<tool_caller>|<invoke(?:[ \t]+[^>\r\n]*)?>|<tool_call(?:[ \t]+[^>\r\n]*|[-_~!:|="][^>\r\n]*)?(?:>|\r?\n))/i,
+          /^(?:<tool>|<tool_calls>|<tool_calling>|<tool_caller>|<invoke(?:[ \t]+[^>\r\n]*)?>|<function=[a-z0-9_-]+(?:[ \t]*>|\s*\r?\n)|<tool_call(?:[ \t]+[^>\r\n]*|[-_~!:|="][^>\r\n]*)?(?:>|\r?\n))/i,
         );
       if (match) {
         return { index: i, openTag: match[0] };
@@ -361,6 +361,7 @@ function getToolCloseTag(openTag: string): string {
   }
   if (normalizedOpenTag === TOOL_CALLER_START) return TOOL_CALLER_END;
   if (/^<invoke(?:[ \t]|>)/i.test(openTag)) return "</invoke>";
+  if (/^<function=[a-z0-9_-]+/i.test(openTag)) return "</function>";
   const namedMatch = openTag.match(/^<tool_call_([a-z0-9_-]+)>$/i);
   return namedMatch ? `</tool_call_${namedMatch[1]}>` : TOOL_END;
 }
@@ -461,6 +462,7 @@ function findPartialToolOpenIndexOutsideMarkdownCode(
   const lowerToolCallingStart = TOOL_CALLING_START.toLowerCase();
   const lowerToolCallerStart = TOOL_CALLER_START.toLowerCase();
   const lowerInvokeStart = "<invoke";
+  const lowerFunctionStart = "<function";
   const lowerCorruptOpenStart = "<tool_call<tool_call";
   const lowerCorruptCloseStart = "</tool_call<tool_call";
   const lowerOrphanInvocationClosePrefix = "</tool_call_invocation";
@@ -524,6 +526,18 @@ function findPartialToolOpenIndexOutsideMarkdownCode(
         if (
           suffix.length === 0 ||
           (/^[ \t]/.test(suffix) && !suffix.includes(">"))
+        ) {
+          return i;
+        }
+      }
+      if (lowerFunctionStart.startsWith(tailLower)) {
+        return i;
+      }
+      if (tailLower.startsWith(lowerFunctionStart)) {
+        const suffix = tailLower.substring(lowerFunctionStart.length);
+        if (
+          suffix.length === 0 ||
+          (/^=[a-z0-9_-]*/i.test(suffix) && !suffix.includes(">"))
         ) {
           return i;
         }
@@ -732,6 +746,9 @@ function coerceParameterValue(rawValue: string): unknown {
  * Extract tool name from the opening tag attribute or a <name> child element.
  */
 function extractToolName(openTag: string, block: string): string {
+  const funcMatch = openTag.match(/^<function=([a-z0-9_-]+)/i);
+  if (funcMatch) return funcMatch[1];
+
   const combined = `${openTag}\n${block}`;
   const attrMatch = combined.match(
     /<(?:tool_call|invoke)\b[^>]*\bname\s*=\s*["']([^"']+)["']/i,
@@ -784,6 +801,15 @@ function parseXmlParameterToolCall(
   while (match !== null) {
     args[match[1]] = coerceParameterValue(match[2]);
     match = parameterRe.exec(block);
+  }
+
+  const shorthandRe = /<parameter=([a-z0-9_-]+)>([\s\S]*?)<\/parameter>/gi;
+  let shortMatch: RegExpExecArray | null = shorthandRe.exec(block);
+  while (shortMatch !== null) {
+    if (!(shortMatch[1] in args)) {
+      args[shortMatch[1]] = coerceParameterValue(shortMatch[2]);
+    }
+    shortMatch = shorthandRe.exec(block);
   }
 
   if (Object.keys(args).length === 0) return null;
