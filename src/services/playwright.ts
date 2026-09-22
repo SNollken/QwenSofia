@@ -544,6 +544,18 @@ async function loginToQwen(
   return false;
 }
 
+type LoginToQwenFn = (
+  accountId: string,
+  email: string,
+  password: string,
+) => Promise<boolean>;
+
+let loginToQwenFn: LoginToQwenFn = loginToQwen;
+
+export function _setLoginToQwenForTesting(fn?: LoginToQwenFn): void {
+  loginToQwenFn = fn ?? loginToQwen;
+}
+
 async function loginViaApi(
   page: Page,
   email: string,
@@ -805,7 +817,10 @@ async function captureHeaders(accountId: string): Promise<void> {
   });
 }
 
-async function refreshHeadersInternal(accountId: string): Promise<void> {
+export async function refreshHeadersInternal(
+  accountId: string,
+  forceReLogin = false,
+): Promise<void> {
   const cache = getHeaderCache(accountId);
   if (cache.refreshInProgress) return;
 
@@ -821,14 +836,14 @@ async function refreshHeadersInternal(accountId: string): Promise<void> {
           timeout: config.timeouts.navigation,
         });
         const url = page.url();
-        if (url.includes("auth") || url.includes("login")) {
+        if (forceReLogin || url.includes("auth") || url.includes("login")) {
           console.log(
             `[Playwright] Session expired during refresh, re-logging in for ${accountId}...`,
           );
           const { getAccountCredentials } = await import("../core/accounts.ts");
           const creds = getAccountCredentials(accountId);
           if (creds && creds.email && creds.password) {
-            await loginToQwen(accountId, creds.email, creds.password);
+            await loginToQwenFn(accountId, creds.email, creds.password);
             // Invalidate cookie cache after re-login
             cookieCaches.delete(accountId);
           } else {
@@ -854,13 +869,18 @@ async function refreshHeadersInternal(accountId: string): Promise<void> {
 
 export async function refreshHeaders(
   accountId: string,
-  signal?: AbortSignal,
+  signalOrForce?: AbortSignal | boolean,
+  forceReLogin = false,
 ): Promise<void> {
+  const signal =
+    typeof signalOrForce === "boolean" ? undefined : signalOrForce;
+  const force =
+    typeof signalOrForce === "boolean" ? signalOrForce : forceReLogin;
   signal?.throwIfAborted();
   const release = await getAccountMutex(accountId).acquire(300_000, signal);
   try {
     signal?.throwIfAborted();
-    await refreshHeadersInternal(accountId);
+    await refreshHeadersInternal(accountId, force);
     signal?.throwIfAborted();
   } finally {
     release();
@@ -1028,6 +1048,12 @@ export async function keepAlivePlaywrightAccount(
 
     touchAccountActivity(accountId);
     return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isKeepAliveTimeoutError(err)) {
+      touchAccountActivity(accountId);
+    }
+    return false;
   } finally {
     release();
   }
@@ -1191,4 +1217,60 @@ export async function ensureAccountHeaders(
   } finally {
     release();
   }
+}
+
+// ─── Testing and Diagnostics Helpers ──────────────────────────────────────────
+
+export function isKeepAliveTimeoutError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /timeout|timed_out|timed out/i.test(msg);
+}
+
+export function invalidateCookieCache(accountId?: string): void {
+  if (accountId) {
+    cookieCaches.delete(accountId);
+  } else {
+    cookieCaches.clear();
+  }
+}
+
+export function setCookieCacheForTesting(
+  accountId: string,
+  cookie: string,
+  timestamp: number = Date.now(),
+): void {
+  cookieCaches.set(accountId, { cookie, timestamp });
+}
+
+export function _setAccountPageForTesting(
+  accountId: string,
+  page: unknown,
+): void {
+  getAccountMutex(accountId);
+  if (page) {
+    accountPages.set(accountId, page as Page);
+  } else {
+    accountPages.delete(accountId);
+  }
+}
+
+export function _getLastAccountActivityForTesting(
+  accountId: string,
+): number | undefined {
+  return lastAccountActivity.get(accountId);
+}
+
+export function _setLastAccountActivityForTesting(
+  accountId: string,
+  timestamp: number,
+): void {
+  lastAccountActivity.set(accountId, timestamp);
+}
+
+export function _cleanupAccountForTesting(accountId: string): void {
+  accountMutexes.delete(accountId);
+  accountPages.delete(accountId);
+  lastAccountActivity.delete(accountId);
+  lastKeepAliveNavigation.delete(accountId);
+  cookieCaches.delete(accountId);
 }

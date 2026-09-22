@@ -6,7 +6,10 @@ import {
   initPlaywrightForAccount,
   isPlaywrightInitialized,
   refreshHeaders,
+  invalidateCookieCache,
 } from "./playwright.ts";
+
+export { invalidateCookieCache };
 
 export interface HeaderResult {
   headers: Record<string, string>;
@@ -90,6 +93,7 @@ export async function getQwenHeaders(
   forceNew = false,
   accountId?: string,
   signal?: AbortSignal,
+  forceReLogin = false,
 ): Promise<HeaderResult> {
   signal?.throwIfAborted();
   if (isAuthMockEnabled()) {
@@ -117,7 +121,7 @@ export async function getQwenHeaders(
   await ensurePlaywrightInitialized(resolvedAccountId, signal);
 
   if (forceNew) {
-    await refreshHeaders(resolvedAccountId, signal);
+    await refreshHeaders(resolvedAccountId, signal, forceReLogin);
   }
 
   const basic = await getPlaywrightBasicHeaders(resolvedAccountId, signal);

@@ -15,6 +15,7 @@ import type {
   TokenEstimationContext,
 } from "./token-estimation-metrics.ts";
 import { getDatabase } from "../core/database.ts";
+import { invalidateCookieCache } from "./playwright.ts";
 import { markAccountRateLimited } from "../core/account-manager.ts";
 import {
   MAX_PAYLOAD_SIZE,
@@ -814,10 +815,12 @@ export async function syncQwenRequestPersonalization(
       `[Qwen] Personalization 401 — refreshing session and retrying | account=${cacheKey}`,
     );
     try {
+      invalidateCookieCache(accountId);
       const { headers: freshHeaders } = await getQwenHeaders(
         true,
         accountId,
         signal,
+        true,
       );
       ({ raw, json } = await attemptPost(freshHeaders));
     } catch (retryErr) {

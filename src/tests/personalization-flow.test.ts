@@ -180,3 +180,93 @@ test("Personalization: error propagation from syncQwenRequestPersonalization", a
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Personalization: invalidateCookieCache removes entry from cookie cache", async () => {
+  // Given: an account with an active cookie cache entry
+  const accountId = "test-account-cache-invalidation";
+  const { invalidateCookieCache, setCookieCacheForTesting, getCookies } =
+    await import("../services/playwright.ts");
+
+  setCookieCacheForTesting(accountId, "session_token=stale-cookie-12345");
+  const cachedBefore = await getCookies(accountId);
+  assert.equal(
+    cachedBefore,
+    "session_token=stale-cookie-12345",
+    "cookie should initially be cached",
+  );
+
+  // When: invalidating the cookie cache for this account
+  invalidateCookieCache(accountId);
+
+  // Then: the cached cookie is removed (getCookies returns empty string because no page is attached)
+  const cachedAfter = await getCookies(accountId);
+  assert.equal(
+    cachedAfter,
+    "",
+    "cookie cache should be empty after invalidateCookieCache",
+  );
+});
+
+test("Personalization: refreshHeadersInternal with forceReLogin=true triggers loginToQwen even without auth/login in URL", async () => {
+  const {
+    refreshHeadersInternal,
+    _setAccountPageForTesting,
+    _setLoginToQwenForTesting,
+    _cleanupAccountForTesting,
+  } = await import("../services/playwright.ts");
+
+  const accountId = "test-account-force-relogin";
+  let loginCalled = false;
+
+  // Given: page is at home URL (does NOT contain 'auth' or 'login') and account credentials exist
+  const fakePage = {
+    url: () => "https://chat.qwen.ai/",
+    isClosed: () => false,
+    goto: async () => {},
+    evaluate: async () => {},
+    on: (event: string, handler: (req: { url: () => string; headers: () => Record<string, string> }) => void) => {
+      if (event === "request") {
+        handler({
+          url: () => "https://chat.qwen.ai/api/v1/test",
+          headers: () => ({
+            cookie: "test=1",
+            "bx-ua": "mock-ua",
+            "user-agent": "mock-agent",
+          }),
+        });
+      }
+    },
+    off: () => {},
+  };
+
+  _setAccountPageForTesting(accountId, fakePage);
+  _setLoginToQwenForTesting(async () => {
+    loginCalled = true;
+    return true;
+  });
+
+  // Ensure credentials exist for accountId in DB
+  const { addAccount, removeAccount } = await import("../core/accounts.ts");
+  try {
+    removeAccount(accountId);
+  } catch {}
+  addAccount("test-relogin@example.com", "pass1234", accountId);
+
+  try {
+    // When: refreshHeadersInternal is called with forceReLogin = false
+    await refreshHeadersInternal(accountId, false);
+    // Then: loginToQwen is NOT called because URL is home
+    assert.equal(loginCalled, false, "loginToQwen should not be called when forceReLogin=false and URL is home");
+
+    // When: refreshHeadersInternal is called with forceReLogin = true
+    await refreshHeadersInternal(accountId, true);
+    // Then: loginToQwen IS called even though URL has no auth/login
+    assert.equal(loginCalled, true, "loginToQwen must be called when forceReLogin=true even if URL has no auth/login");
+  } finally {
+    _cleanupAccountForTesting(accountId);
+    _setLoginToQwenForTesting(undefined);
+    try {
+      removeAccount(accountId);
+    } catch {}
+  }
+});
