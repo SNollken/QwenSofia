@@ -7,10 +7,14 @@ import { NotFoundError } from "../core/errors.js";
 import { sendOpenAIError } from "./error-helpers.js";
 import {
   QWEN_PRIMARY_MODEL,
+  QWEN_PRIMARY_CONTEXT_WINDOW,
   syncModelContextWindows,
 } from "../core/model-registry.ts";
 
+type PublicQwenModel = Awaited<ReturnType<typeof fetchQwenModels>>[number];
+
 const app = new Hono();
+const FETCH_MODELS_TIMEOUT_MS = 5000;
 
 function buildPublicModelCatalog<T extends { id: string }>(models: T[]): T[] {
   const model = models.find((entry) => entry.id === QWEN_PRIMARY_MODEL);
@@ -29,9 +33,52 @@ function getPreferredModelsAccountId(): string | undefined {
   }
 }
 
+async function fetchModelsWithFallback(
+  accountId?: string,
+): Promise<PublicQwenModel[]> {
+  try {
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new Error(
+            `Timeout fetching models after ${FETCH_MODELS_TIMEOUT_MS}ms`,
+          ),
+        );
+      }, FETCH_MODELS_TIMEOUT_MS);
+      timeoutId.unref?.();
+    });
+
+    try {
+      return await Promise.race([
+        fetchQwenModels(accountId),
+        timeoutPromise,
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  } catch (error) {
+    console.warn(
+      "⚠️ [Models] Failed to fetch models from Qwen, using static fallback:",
+      error,
+    );
+    const fallbackModel: PublicQwenModel = {
+      id: QWEN_PRIMARY_MODEL,
+      name: QWEN_PRIMARY_MODEL,
+      object: "model",
+      owned_by: "QwenSofia",
+      created: 0,
+      context_window: QWEN_PRIMARY_CONTEXT_WINDOW,
+    };
+    return [fallbackModel];
+  }
+}
+
 app.get("/v1/models", async (c) => {
   try {
-    const models = await fetchQwenModels(getPreferredModelsAccountId());
+    const models = await fetchModelsWithFallback(getPreferredModelsAccountId());
     const allModels = buildPublicModelCatalog(models);
     const etag = `"${createHash("md5").update(JSON.stringify(allModels)).digest("hex")}"`;
 
@@ -57,7 +104,7 @@ app.get("/v1/models", async (c) => {
 app.get("/v1/models/:model", async (c) => {
   try {
     const modelId = c.req.param("model");
-    const models = await fetchQwenModels(getPreferredModelsAccountId());
+    const models = await fetchModelsWithFallback(getPreferredModelsAccountId());
     syncModelContextWindows(models);
 
     const publicModels = buildPublicModelCatalog(models);
@@ -75,4 +122,4 @@ app.get("/v1/models/:model", async (c) => {
   }
 });
 
-export { app };
+export { app, fetchModelsWithFallback };
