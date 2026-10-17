@@ -1704,6 +1704,7 @@ export async function createQwenStream(
   tokenEstimationContext: TokenEstimationContext;
 }> {
   options?.signal?.throwIfAborted();
+  console.log(`[TRACE 6] createQwenStream getting headers for ${accountId}...`);
   // A new logical chat session should reuse the warmed header cache when available.
   // Header recapture is much more expensive and should be reserved for real refresh/login cases,
   // not for ordinary first prompts that simply need parent_id reset.
@@ -1712,6 +1713,7 @@ export async function createQwenStream(
     accountId,
     options?.signal,
   );
+  console.log(`[TRACE 7] Headers retrieved for ${accountId}!`);
   const { headers, parentMessageId } = captured;
   const model = modelId.replace("-no-thinking", "");
   let createdNewChat = false;
@@ -1918,6 +1920,7 @@ export async function createQwenStream(
   const page = accountId ? getPageForAccount(accountId) : undefined;
   if (page && !page.isClosed() && !isAuthMockEnabled()) {
     try {
+      console.log(`[TRACE 8] Calling browserStreamFetch for ${accountId}...`);
       const browserResult = await browserStreamFetch(page, url, {
         method: "POST",
         headers: {

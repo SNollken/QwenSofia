@@ -352,6 +352,7 @@ export async function acquireUpstreamStream(
     params.signal?.throwIfAborted();
     const accountId = account.id;
     const accountEmail = maskEmail(account.email);
+    console.log(`[TRACE 1] acquireUpstreamStream loop for account: ${accountEmail} (${accountId})`);
 
     if (triedAccountIds.has(accountId)) {
       account = getNextAvailableAccount(triedAccountIds);
@@ -693,7 +694,9 @@ async function tryCreateStreamWithRetry(
   ...args: Parameters<typeof createStreamWithRetry>
 ): Promise<CreateStreamSuccess | CreateStreamFailure> {
   const [params, accountId] = args;
+  console.log(`[TRACE 2] tryCreateStreamWithRetry acquiring slot for ${accountId}...`);
   const release = await acquireAccountRequestSlot(accountId, params.signal);
+  console.log(`[TRACE 3] Slot acquired for ${accountId}!`);
   const releaseAccountSlot = () => {
     params.signal?.removeEventListener("abort", releaseAccountSlot);
     release();
@@ -771,6 +774,7 @@ async function createStreamWithRetry(
       let result: Awaited<ReturnType<typeof createQwenStream>>;
       try {
         if (params.requestPersonalizationInstruction) {
+          console.log(`[TRACE 4] Syncing personalization for ${accountId}...`);
           await syncQwenRequestPersonalization(
             params.requestPersonalizationInstruction,
             accountId === "global" ? undefined : accountId,
@@ -784,6 +788,7 @@ async function createStreamWithRetry(
           );
         }
 
+        console.log(`[TRACE 5] Calling createQwenStream for ${accountId}...`);
         result = await createQwenStream(
           params.finalPrompt,
           params.isThinkingModel,
