@@ -659,7 +659,8 @@ export async function browserUiStreamFetch(
             const chunk =
               "data: " +
               JSON.stringify({
-                choices: [{ delta: { content: delta } }],
+                response_id: detectedChatId || "ui-stream",
+                choices: [{ delta: { content: delta, phase: "answer" } }],
               }) +
               "\n\n";
             controller.enqueue(enc.encode(chunk));
