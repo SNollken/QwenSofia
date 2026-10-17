@@ -479,3 +479,181 @@ export async function browserStreamFetch(
     watcher.stop();
   }
 }
+
+async function dismissAgeModalInline(page: Page): Promise<void> {
+  try {
+    const modal = page.locator(".age-confirmation-modal");
+    if (
+      (await modal.count()) > 0 &&
+      (await modal.first().isVisible({ timeout: 1500 }).catch(() => false))
+    ) {
+      const continueBtn = page.locator(
+        '.age-confirmation-modal .qwen-chat-v2-btn-black:has-text("Continuar"), ' +
+          '.age-confirmation-modal button:has-text("Continuar"), ' +
+          '.age-confirmation-modal button:has-text("Continue"), ' +
+          '.age-confirmation-modal button:has-text("Confirm"), ' +
+          '.age-confirmation-modal button:has-text("Agree")',
+      );
+      if (await continueBtn.first().isVisible().catch(() => false)) {
+        await continueBtn.first().click().catch(() => {});
+      }
+    }
+  } catch {
+    // Ignore modal errors
+  }
+}
+
+export async function browserUiStreamFetch(
+  page: Page,
+  prompt: string,
+  options: {
+    chatSessionId?: string | null;
+    modelId?: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  } = {},
+): Promise<{
+  stream: ReadableStream<Uint8Array>;
+  chatSessionId: string;
+  createdNewChat: boolean;
+  status: number;
+  contentType: string;
+}> {
+  options.signal?.throwIfAborted();
+  const enc = new TextEncoder();
+  const startTime = Date.now();
+  const maxTimeoutMs = options.timeoutMs || 120000;
+
+  if (options.chatSessionId) {
+    if (!page.url().includes(`/c/${options.chatSessionId}`)) {
+      await page.goto(`https://chat.qwen.ai/c/${options.chatSessionId}`, {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      });
+    }
+  } else {
+    if (!page.url().includes("/c/new-chat")) {
+      await page.goto("https://chat.qwen.ai/c/new-chat", {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      });
+    }
+  }
+
+  await dismissAgeModalInline(page);
+  await page.waitForSelector("textarea", { timeout: 15000 });
+  await page.focus("textarea");
+
+  const initialResponses = await page.evaluate(
+    () => document.querySelectorAll(".response-message-content").length,
+  );
+
+  await page.evaluate((text) => {
+    document.execCommand("insertText", false, text);
+  }, prompt);
+
+  await page.waitForTimeout(150);
+  const sendBtn = await page.waitForSelector(
+    "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button",
+    { timeout: 5000 },
+  );
+  await sendBtn.click();
+
+  let detectedChatId = options.chatSessionId || "";
+  let createdNewChat = false;
+
+  if (!options.chatSessionId) {
+    await page
+      .waitForURL(/\/c\/[a-f0-9-]+/, { timeout: 10000 })
+      .catch(() => {});
+    const match = page.url().match(/\/c\/([a-f0-9-]+)/);
+    if (match) {
+      detectedChatId = match[1];
+      createdNewChat = true;
+    }
+  }
+
+  let lastText = "";
+  let hasEnded = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        while (!hasEnded && Date.now() - startTime < maxTimeoutMs) {
+          if (options.signal?.aborted) {
+            hasEnded = true;
+            await page
+              .evaluate(() => {
+                const stop = document.querySelector(
+                  ".stop-generating-button, [aria-label*='stop' i]",
+                ) as HTMLElement;
+                stop?.click();
+              })
+              .catch(() => {});
+            controller.close();
+            return;
+          }
+
+          await page.waitForTimeout(80);
+          const state = await page.evaluate(
+            ({ initialResponses }) => {
+              const els = document.querySelectorAll(
+                ".response-message-content",
+              );
+              if (els.length <= initialResponses) {
+                return { text: "", isGenerating: true, hasMsg: false };
+              }
+              const last = els[els.length - 1];
+              const text = last ? last.textContent || "" : "";
+              const stopBtn = document.querySelector(
+                ".stop-generating-button, [aria-label*='stop' i], .stop-button",
+              );
+              return { text, isGenerating: !!stopBtn, hasMsg: true };
+            },
+            { initialResponses },
+          );
+
+          if (state.hasMsg && state.text.length > lastText.length) {
+            const delta = state.text.slice(lastText.length);
+            lastText = state.text;
+            const chunk =
+              "data: " +
+              JSON.stringify({
+                choices: [{ delta: { content: delta } }],
+              }) +
+              "\n\n";
+            controller.enqueue(enc.encode(chunk));
+            return;
+          }
+
+          if (state.hasMsg && lastText.length > 0 && !state.isGenerating) {
+            hasEnded = true;
+            controller.enqueue(
+              enc.encode(
+                "data: " +
+                  JSON.stringify({
+                    choices: [{ delta: {}, finish_reason: "stop" }],
+                  }) +
+                  "\n\n",
+              ),
+            );
+            controller.enqueue(enc.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+        }
+        controller.close();
+      } catch (err: any) {
+        controller.error(err);
+      }
+    },
+  });
+
+  return {
+    stream,
+    chatSessionId: detectedChatId,
+    createdNewChat,
+    status: 200,
+    contentType: "text/event-stream",
+  };
+}

@@ -16,7 +16,11 @@ import type {
 } from "./token-estimation-metrics.ts";
 import { getDatabase } from "../core/database.ts";
 import { invalidateCookieCache, getPageForAccount } from "./playwright.ts";
-import { browserFetch, browserStreamFetch } from "./stream-bridge.ts";
+import {
+  browserFetch,
+  browserStreamFetch,
+  browserUiStreamFetch,
+} from "./stream-bridge.ts";
 import { markAccountRateLimited } from "../core/account-manager.ts";
 import {
   MAX_PAYLOAD_SIZE,
@@ -1155,56 +1159,54 @@ async function createQwenChatSession(
   }
 
   const page = accountId ? getPageForAccount(accountId) : undefined;
-  console.log(`[TRACE B] getPageForAccount(${accountId}) found: ${!!page}`);
   if (page && !page.isClosed()) {
-    console.log(`[TRACE B2] page url: ${page.url()}`);
     try {
-      console.log(`[TRACE C] Calling browserFetch /api/v2/chats/new...`);
-      const resp = await browserFetch(
-        page,
+      const accessToken = await page
+        .evaluate(() => localStorage.getItem("token"))
+        .catch(() => null);
+      const resp = await page.request.post(
         `${config.qwen.baseUrl}/api/v2/chats/new`,
         {
-          method: "POST",
           headers: {
-            accept: "application/json",
+            accept: "application/json, text/plain, */*",
             "content-type": "application/json",
             source: "web",
-            version: QWEN_WEB_VERSION,
+            version: "0.3.19",
+            origin: config.qwen.baseUrl,
+            referer: `${config.qwen.baseUrl}/c/new-chat`,
+            ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
             ...(headers["bx-v"] ? { "bx-v": headers["bx-v"] } : {}),
             ...(headers["bx-ua"] ? { "bx-ua": headers["bx-ua"] } : {}),
             ...(headers["bx-umidtoken"]
               ? { "bx-umidtoken": headers["bx-umidtoken"] }
               : {}),
+            "x-request-id": crypto.randomUUID(),
           },
-          body: JSON.stringify({
+          data: {
             title: "Nova Conversa",
             models: [model],
             chat_mode: "normal",
             chat_type: "t2t",
             timestamp: Date.now(),
             project_id: "",
-          }),
-          timeoutMs: config.timeouts.http,
+          },
+          timeout: config.timeouts.http,
         },
       );
 
-      if (resp.status < 400 && resp.body) {
-        try {
-          const json = JSON.parse(resp.body);
-          const chatId =
-            json?.chat_id ||
-            json?.id ||
-            json?.data?.chat_id ||
-            json?.data?.id ||
-            json?.data?.chat?.id;
-          if (chatId) return chatId;
-        } catch {
-          /* fallback to direct */
-        }
+      if (resp.status() < 400) {
+        const json = await resp.json().catch(() => null);
+        const chatId =
+          json?.chat_id ||
+          json?.id ||
+          json?.data?.chat_id ||
+          json?.data?.id ||
+          json?.data?.chat?.id;
+        if (chatId) return chatId;
       }
     } catch (e: any) {
       logger.warn(
-        "[Qwen] Browser fetch create chat failed, falling back to direct fetch",
+        "[Qwen] Browser request create chat failed, falling back to direct fetch",
         { error: e?.message },
       );
     }
@@ -1924,78 +1926,24 @@ export async function createQwenStream(
   const page = accountId ? getPageForAccount(accountId) : undefined;
   if (page && !page.isClosed() && !isAuthMockEnabled()) {
     try {
-      console.log(`[TRACE 8] Calling browserStreamFetch for ${accountId}...`);
-      const browserResult = await browserStreamFetch(page, url, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          "x-accel-buffering": "no",
-          "x-request-id": crypto.randomUUID(),
-          source: "web",
-          version: QWEN_WEB_VERSION,
-          ...(headers["bx-v"] ? { "bx-v": headers["bx-v"] } : {}),
-          ...(headers["bx-ua"] ? { "bx-ua": headers["bx-ua"] } : {}),
-          ...(headers["bx-umidtoken"]
-            ? { "bx-umidtoken": headers["bx-umidtoken"] }
-            : {}),
-        },
-        body: payloadJson,
+      console.log(`[Qwen] Initiating browser UI stream for ${accountId}...`);
+      const uiResult = await browserUiStreamFetch(page, prompt, {
+        chatSessionId,
+        modelId,
         timeoutMs: dynamicTimeoutMs,
+        signal: controller.signal,
       });
 
-      if (
-        browserResult.contentType.includes("text/event-stream") &&
-        browserResult.status < 400
-      ) {
-        clearTimeout(timeoutId);
-        return {
-          stream: wrapUpstreamStream(browserResult.stream, controller),
-          headers,
-          uiSessionId: chatSessionId || "",
-          controller,
-          accountId: accountId ?? "global",
-          createdNewChat,
-          tokenEstimationContext,
-        };
-      }
-
-      if (browserResult.body) {
-        const bodyText = browserResult.body;
-        if (
-          browserResult.status === 405 ||
-          browserResult.status === 403 ||
-          isTmdChallenge(bodyText)
-        ) {
-          clearTimeout(timeoutId);
-          logger.warn(
-            `[Qwen] TMD anti-bot / WAF challenge (${browserResult.status}) detected. Quarantining account ${accountId || "unknown"}.`,
-          );
-          if (accountId && accountId !== "global") {
-            markAccountRateLimited(
-              accountId,
-              24 * 60 * 60 * 1000,
-              "CaptchaBlocked",
-            );
-          }
-          throw withCreatedChatMetadata(
-            new QwenUpstreamError(
-              `Qwen anti-bot/WAF challenge detected (${browserResult.status}): ${bodyText.slice(0, 200)}`,
-              "FAIL_SYS_USER_VALIDATE",
-              403,
-            ),
-          );
-        }
-        const parsedError = parseQwenJsonError(
-          bodyText,
-          browserResult.status,
-          accountId,
-        );
-        if (parsedError) {
-          clearTimeout(timeoutId);
-          throw withCreatedChatMetadata(parsedError);
-        }
-      }
+      clearTimeout(timeoutId);
+      return {
+        stream: wrapUpstreamStream(uiResult.stream, controller),
+        headers,
+        uiSessionId: uiResult.chatSessionId || chatSessionId || "",
+        controller,
+        accountId: accountId ?? "global",
+        createdNewChat: uiResult.createdNewChat || createdNewChat,
+        tokenEstimationContext,
+      };
     } catch (browserErr: any) {
       clearTimeout(timeoutId);
       if (
@@ -2023,7 +1971,7 @@ export async function createQwenStream(
         );
       }
       logger.warn(
-        "[Qwen] Browser stream fetch failed, falling back to direct fetch",
+        "[Qwen] Browser UI stream failed, falling back to direct fetch",
         { error: browserErr?.message },
       );
     }
