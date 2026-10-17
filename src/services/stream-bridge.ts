@@ -103,7 +103,9 @@ export async function browserFetch(
   body: string;
   headers: Record<string, string>;
 }> {
+  console.log(`[TRACE BF 1] browserFetch for ${url}...`);
   await ensureStreamBridge(page);
+  console.log(`[TRACE BF 2] ensureStreamBridge done, calling page.evaluate...`);
   const reqId = crypto.randomUUID();
 
   const timeoutMs = options.timeoutMs || 30000;
@@ -111,7 +113,7 @@ export async function browserFetch(
 
   try {
     if (page.isClosed()) throw new Error("Page is closed");
-    return await page.evaluate(
+    const result = await page.evaluate(
       async ({ url, options }: any) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(
@@ -145,6 +147,8 @@ export async function browserFetch(
       },
       { url, options, reqId },
     );
+    console.log(`[TRACE BF 3] page.evaluate finished! status: ${result.status}`);
+    return result;
   } catch (err: any) {
     if (
       err.message?.includes("Execution context was destroyed") ||

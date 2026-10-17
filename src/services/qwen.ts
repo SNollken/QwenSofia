@@ -1149,13 +1149,16 @@ async function createQwenChatSession(
   accountId?: string,
 ): Promise<string> {
   signal?.throwIfAborted();
+  console.log(`[TRACE A] createQwenChatSession start for ${accountId}...`);
   if (isAuthMockEnabled()) {
     return process.env.TEST_SESSION_ID || "mock-session";
   }
 
   const page = accountId ? getPageForAccount(accountId) : undefined;
+  console.log(`[TRACE B] getPageForAccount(${accountId}) found: ${!!page}`);
   if (page && !page.isClosed()) {
     try {
+      console.log(`[TRACE C] Calling browserFetch /api/v2/chats/new...`);
       const resp = await browserFetch(
         page,
         `${config.qwen.baseUrl}/api/v2/chats/new`,
