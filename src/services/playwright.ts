@@ -503,27 +503,39 @@ export async function initPlaywrightForAccount(
           timeout: config.timeouts.navigation,
         });
         await dismissAgeModal(acctPage);
+        const cookies = await acctPage.context().cookies();
+        const hasToken = cookies.some((c) => c.name === "token");
         const url = acctPage.url();
-        if (url.includes("auth") || url.includes("login")) {
+
+        if (!hasToken || url.includes("auth") || url.includes("login")) {
           if (account.email && account.password) {
             console.log(
-              `[Playwright] Session expired for ${maskEmail(account.email)}, re-logging in...`,
+              `[Playwright] Session expired/missing for ${maskEmail(account.email)}, logging in...`,
             );
-            await loginToQwen(account.id, account.email, account.password);
+            const loggedIn = await loginToQwen(
+              account.id,
+              account.email,
+              account.password,
+            );
+            if (!loggedIn) {
+              throw new Error(
+                `Login failed for ${maskEmail(account.email)} - session invalid`,
+              );
+            }
           } else {
-            console.warn(
-              `[Playwright] Session expired for account ${account.id} but no credentials available.`,
+            throw new Error(
+              `Session expired for account ${account.id} but no credentials available.`,
             );
           }
-        } else {
-          console.log(
-            `✅ [Playwright] Session validated for ${maskEmail(account.email)}.`,
-          );
         }
+        console.log(
+          `✅ [Playwright] Session validated for ${maskEmail(account.email)}.`,
+        );
       } catch (err: any) {
         console.warn(
           `[Playwright] Failed to validate session for ${maskEmail(account.email)}: ${err.message}`,
         );
+        throw err;
       }
 
       // Capture headers by navigating and intercepting
@@ -634,7 +646,12 @@ async function loginViaApi(
       { email, password: hashedPassword },
     );
 
-    if (result.ok) {
+    if (
+      result.ok &&
+      result.data &&
+      result.data.success !== false &&
+      result.data.data?.token
+    ) {
       await page.goto("https://chat.qwen.ai/", {
         waitUntil: "domcontentloaded",
       });
