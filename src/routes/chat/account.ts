@@ -217,6 +217,7 @@ function isAccountUnavailableError(err: any): boolean {
     err?.upstreamCode === "RateLimited" ||
     err?.upstreamCode === "FAIL_SYS_USER_VALIDATE" ||
     err?.upstreamCode === "RGV587_ERROR" ||
+    err?.upstreamCode === "Bad_Request" ||
     err?.upstreamStatus === 429 ||
     err?.upstreamStatus === 403 ||
     err?.upstreamStatus === 405 ||
@@ -509,13 +510,9 @@ export async function acquireUpstreamStream(
     }
 
     if (stickyThreadAccountId === accountId) {
-      if (isAccountUnavailableError(lastError) || isAntiBotError(lastError)) {
-        console.warn(
-          `⚠️  [Chat] Sticky account unavailable; trying another account with full context.`,
-        );
-      } else {
-        break;
-      }
+      console.warn(
+        `⚠️  [Chat] Sticky account ${accountEmail} (${accountId}) failed; trying another account with full context.`,
+      );
     }
 
     // Mark anti-bot blocked accounts for cooldown and reset profile in background
