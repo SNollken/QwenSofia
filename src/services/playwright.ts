@@ -493,7 +493,7 @@ export async function initPlaywrightForAccount(
 
       // Navigate to Qwen home to validate session and populate cookies
       try {
-        await acctPage.goto("https://chat.qwen.ai/", {
+        await acctPage.goto("https://chat.qwen.ai/c/new-chat", {
           waitUntil: "domcontentloaded",
           timeout: config.timeouts.navigation,
         });
@@ -817,12 +817,14 @@ async function captureHeaders(accountId: string): Promise<void> {
 
     void (async () => {
       try {
-        await page.goto("https://chat.qwen.ai/", {
-          waitUntil: "domcontentloaded",
-          timeout: config.timeouts.navigation,
-        });
+        if (!page.url().includes("chat.qwen.ai")) {
+          await page.goto("https://chat.qwen.ai/c/new-chat", {
+            waitUntil: "domcontentloaded",
+            timeout: config.timeouts.navigation,
+          });
+        }
         await dismissAgeModal(page);
-        await sleep(1500);
+        await sleep(1000);
         if (resolved) return;
         await page
           .evaluate(async () => {
@@ -836,6 +838,9 @@ async function captureHeaders(accountId: string): Promise<void> {
             }
           })
           .catch(() => {});
+        await sleep(1500);
+        if (resolved) return;
+        await triggerHeaderCaptureRequest(page, () => resolved);
       } catch (err) {
         console.warn(`❌ [Playwright] Error triggering request: ${err}`);
         done();
@@ -858,7 +863,7 @@ export async function refreshHeadersInternal(
     const page = accountPages.get(accountId);
     if (page) {
       try {
-        await page.goto("https://chat.qwen.ai/", {
+        await page.goto("https://chat.qwen.ai/c/new-chat", {
           waitUntil: "domcontentloaded",
           timeout: config.timeouts.navigation,
         });
