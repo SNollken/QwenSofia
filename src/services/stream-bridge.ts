@@ -532,13 +532,31 @@ export async function browserUiStreamFetch(
       });
     }
   } else {
-    if (!page.url().includes("/c/new-chat")) {
+    let resetViaSidebar = false;
+    if (page.url().includes("chat.qwen.ai")) {
+      resetViaSidebar = await page.evaluate(() => {
+        const el = document.querySelector(
+          ".sidebar-entry-fixed-list-content, [aria-label*='nova' i], .new-chat-button",
+        ) as HTMLElement;
+        if (el) {
+          el.click();
+          return true;
+        }
+        return false;
+      }).catch(() => false);
+    }
+    if (!resetViaSidebar && !page.url().includes("/c/new-chat")) {
       await page.goto("https://chat.qwen.ai/c/new-chat", {
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
     }
   }
+
+  await page
+    .locator("#splash-screen, #splash-main-container")
+    .waitFor({ state: "hidden", timeout: 6000 })
+    .catch(() => {});
 
   await dismissAgeModalInline(page);
   await page.waitForSelector("textarea", { timeout: 15000 });
@@ -552,12 +570,29 @@ export async function browserUiStreamFetch(
     document.execCommand("insertText", false, text);
   }, prompt);
 
-  await page.waitForTimeout(150);
-  const sendBtn = await page.waitForSelector(
-    "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button",
-    { timeout: 5000 },
-  );
-  await sendBtn.click();
+  await page.waitForTimeout(200);
+
+  const clicked = await page.evaluate(() => {
+    const b = document.querySelector(
+      "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button button, .chat-prompt-send-button",
+    ) as HTMLElement;
+    if (b) {
+      b.click();
+      return true;
+    }
+    return false;
+  }).catch(() => false);
+
+  if (!clicked) {
+    const sendBtn = await page.$(
+      "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button",
+    );
+    if (sendBtn) {
+      await sendBtn.click({ force: true }).catch(() => {});
+    } else {
+      await page.keyboard.press("Enter");
+    }
+  }
 
   let detectedChatId = options.chatSessionId || "";
   let createdNewChat = false;
