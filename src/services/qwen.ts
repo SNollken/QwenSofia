@@ -1722,6 +1722,35 @@ export async function createQwenStream(
   console.log(`[TRACE 7] Headers retrieved for ${accountId}!`);
   const { headers, parentMessageId } = captured;
   const model = modelId.replace("-no-thinking", "");
+
+  const page = accountId ? getPageForAccount(accountId) : undefined;
+  if (page && !page.isClosed() && !isAuthMockEnabled()) {
+    try {
+      console.log(`[Qwen] Initiating direct browser UI stream for ${accountId}...`);
+      const uiResult = await browserUiStreamFetch(page, prompt, {
+        chatSessionId: options?.chatSessionId || undefined,
+        modelId,
+        timeoutMs: config.timeouts.chat,
+        signal: options?.signal,
+      });
+
+      return {
+        stream: uiResult.stream,
+        headers,
+        uiSessionId: uiResult.chatSessionId || "",
+        controller: new AbortController(),
+        accountId: accountId ?? "global",
+        createdNewChat: uiResult.createdNewChat,
+        tokenEstimationContext: {},
+      };
+    } catch (browserErr: any) {
+      logger.warn(
+        "[Qwen] Browser UI stream failed, falling back to HTTP fetch",
+        { error: browserErr?.message },
+      );
+    }
+  }
+
   let createdNewChat = false;
   let chatSessionId: string | null | undefined;
   let leasedWarmChat = false;
@@ -1923,11 +1952,11 @@ export async function createQwenStream(
   detachSourceAbort = forwardAbortSignal(options?.signal, controller);
   const timeoutId = setTimeout(() => controller.abort(), dynamicTimeoutMs);
 
-  const page = accountId ? getPageForAccount(accountId) : undefined;
-  if (page && !page.isClosed() && !isAuthMockEnabled()) {
+  const fallbackPage = accountId ? getPageForAccount(accountId) : undefined;
+  if (fallbackPage && !fallbackPage.isClosed() && !isAuthMockEnabled()) {
     try {
       console.log(`[Qwen] Initiating browser UI stream for ${accountId}...`);
-      const uiResult = await browserUiStreamFetch(page, prompt, {
+      const uiResult = await browserUiStreamFetch(fallbackPage, prompt, {
         chatSessionId,
         modelId,
         timeoutMs: dynamicTimeoutMs,
