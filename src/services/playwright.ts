@@ -317,13 +317,21 @@ export async function getCookies(accountId: string): Promise<string> {
   const page = accountPages.get(accountId);
   if (!page) return "";
 
-  const cookies = await page.context().cookies();
-  const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-  cookieCaches.set(accountId, { cookie: cookieStr, timestamp: now });
-  return cookieStr;
+  try {
+    const cookiesPromise = page.context().cookies();
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("cookies timeout")), 2000),
+    );
+    const cookies = await Promise.race([cookiesPromise, timeoutPromise]);
+    const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    cookieCaches.set(accountId, { cookie: cookieStr, timestamp: now });
+    return cookieStr;
+  } catch {
+    return cached?.cookie || "";
+  }
 }
 
-export async function getBasicHeaders(
+export async function getPlaywrightBasicHeaders(
   accountId: string,
   signal?: AbortSignal,
 ): Promise<{
@@ -339,40 +347,29 @@ export async function getBasicHeaders(
     throw new Error(`Playwright not initialized for account: ${accountId}`);
   }
 
-  // Acquire mutex to prevent concurrent browser access
-  const release = await getAccountMutex(accountId).acquire(300_000, signal);
-  try {
-    signal?.throwIfAborted();
-    touchAccountActivity(accountId);
-    // Get real user agent from browser
-    let userAgent = config.auth.userAgent;
-    try {
-      userAgent = await page.evaluate(() => navigator.userAgent);
-    } catch {
-      // Use default
-    }
+  touchAccountActivity(accountId);
+  const fingerprint = getFingerprintProfile(accountId);
+  const userAgent = fingerprint.userAgent || config.auth.userAgent;
 
-    const cache = getHeaderCache(accountId);
+  const cache = getHeaderCache(accountId);
+  const bxUa = cache.headers["bx-ua"] || "";
+  const bxUmidtoken = cache.headers["bx-umidtoken"] || "";
+  const bxV = cache.headers["bx-v"] || "2.5.36";
 
-    const bxUa = cache.headers["bx-ua"] || "";
-    const bxUmidtoken = cache.headers["bx-umidtoken"] || "";
-    const bxV = cache.headers["bx-v"] || "2.5.36";
+  const cookie = await getCookies(accountId);
 
-    const cookie = await getCookies(accountId);
-
-    signal?.throwIfAborted();
-    touchAccountActivity(accountId);
-    return {
-      cookie,
-      userAgent,
-      bxV,
-      bxUa,
-      bxUmidtoken,
-    };
-  } finally {
-    release();
-  }
+  signal?.throwIfAborted();
+  touchAccountActivity(accountId);
+  return {
+    cookie,
+    userAgent,
+    bxV,
+    bxUa,
+    bxUmidtoken,
+  };
 }
+
+export const getBasicHeaders = getPlaywrightBasicHeaders;
 
 export async function dismissAgeModal(page: Page): Promise<void> {
   try {
