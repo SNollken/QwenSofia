@@ -29,22 +29,16 @@ async function pageText(page: Page): Promise<string> {
   return (await page.locator("body").innerText().catch(() => "")) || "";
 }
 
+export const BAXIA_CAPTCHA_SELECTOR =
+  'iframe#baxia-dialog-content, iframe[src*="_____tmd_____/punish"], #aliyunCaptcha-window-float, #aliyunCaptcha-puzzle, #aliyunCaptcha-sliding-slider';
+
 export async function isAccessVerificationVisible(page: Page): Promise<boolean> {
-  const text = await pageText(page);
-  if (
-    /access verification|verify that you are a real person|verification failed|complete the operation to verify/i.test(
-      text,
-    )
-  ) {
-    return true;
+  try {
+    const locator = page.locator(BAXIA_CAPTCHA_SELECTOR).first();
+    return await locator.isVisible({ timeout: 500 }).catch(() => false);
+  } catch {
+    return false;
   }
-  return (
-    (await page
-      .locator(
-        "#aliyunCaptcha-window-float, #aliyunCaptcha-sliding-slider, #aliyunCaptcha-puzzle",
-      )
-      .count()) > 0
-  );
 }
 
 export async function isCaptchaFailed(page: Page): Promise<boolean> {

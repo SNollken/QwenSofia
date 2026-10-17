@@ -1990,13 +1990,30 @@ export async function createQwenStream(
         }
       }
     } catch (browserErr: any) {
+      clearTimeout(timeoutId);
       if (
         browserErr instanceof QwenUpstreamError ||
         browserErr instanceof RetryableQwenStreamError ||
-        browserErr instanceof UpstreamRateLimit
+        browserErr instanceof UpstreamRateLimit ||
+        browserErr.message?.includes("anti-bot") ||
+        browserErr.message?.includes("FAIL_SYS_USER_VALIDATE")
       ) {
-        clearTimeout(timeoutId);
-        throw browserErr;
+        if (accountId && accountId !== "global") {
+          markAccountRateLimited(
+            accountId,
+            24 * 60 * 60 * 1000,
+            "CaptchaBlocked",
+          );
+        }
+        throw withCreatedChatMetadata(
+          browserErr instanceof QwenUpstreamError
+            ? browserErr
+            : new QwenUpstreamError(
+                `Qwen anti-bot challenge: ${browserErr.message}`,
+                "FAIL_SYS_USER_VALIDATE",
+                403,
+              ),
+        );
       }
       logger.warn(
         "[Qwen] Browser stream fetch failed, falling back to direct fetch",
