@@ -620,14 +620,18 @@ export async function browserUiStreamFetch(
   console.log(`[UIStream 8] ChatId: ${detectedChatId}. Returning ReadableStream!`);
 
   let lastText = "";
+  let lastLength = 0;
   let hasEnded = false;
+  let pullTicks = 0;
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
+      console.log(`[UIStream pull] called!`);
       try {
         while (!hasEnded && Date.now() - startTime < maxTimeoutMs) {
           if (options.signal?.aborted) {
             hasEnded = true;
+            console.log(`[UIStream pull] aborted by signal`);
             await page
               .evaluate(() => {
                 const stop = document.querySelector(
@@ -641,27 +645,33 @@ export async function browserUiStreamFetch(
           }
 
           await page.waitForTimeout(80);
+          pullTicks++;
           const state = await page.evaluate(
             ({ initialResponses }) => {
               const els = document.querySelectorAll(
                 ".response-message-content",
               );
               if (els.length <= initialResponses) {
-                return { text: "", isGenerating: true, hasMsg: false };
+                return { text: "", isGenerating: true, hasMsg: false, totalEls: els.length };
               }
               const last = els[els.length - 1];
               const text = last ? last.textContent || "" : "";
               const stopBtn = document.querySelector(
                 ".stop-generating-button, [aria-label*='stop' i], .stop-button",
               );
-              return { text, isGenerating: !!stopBtn, hasMsg: true };
+              return { text, isGenerating: !!stopBtn, hasMsg: true, totalEls: els.length };
             },
             { initialResponses },
           );
 
-          if (state.hasMsg && state.text.length > lastText.length) {
-            const delta = state.text.slice(lastText.length);
-            lastText = state.text;
+          if (pullTicks % 15 === 0) {
+            console.log(`[UIStream pull #${pullTicks}] state: hasMsg=${state.hasMsg}, totalEls=${state.totalEls}, textLen=${state.text.length}, isGen=${state.isGenerating}`);
+          }
+
+          if (state.hasMsg && state.text.length > lastLength) {
+            const delta = state.text.slice(lastLength);
+            lastLength = state.text.length;
+            console.log(`[UIStream emit] +${delta.length} chars (total ${lastLength})`);
             const chunk =
               "data: " +
               JSON.stringify({
@@ -672,8 +682,9 @@ export async function browserUiStreamFetch(
             return;
           }
 
-          if (state.hasMsg && lastText.length > 0 && !state.isGenerating) {
+          if (state.hasMsg && lastLength > 0 && !state.isGenerating) {
             hasEnded = true;
+            console.log(`[UIStream complete] Finished with ${lastLength} chars!`);
             controller.enqueue(
               enc.encode(
                 "data: " +
@@ -688,8 +699,10 @@ export async function browserUiStreamFetch(
             return;
           }
         }
+        console.log(`[UIStream pull] Exited while loop without completion (timed out)`);
         controller.close();
       } catch (err: any) {
+        console.error(`[UIStream pull error]`, err?.message);
         controller.error(err);
       }
     },
