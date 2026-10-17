@@ -824,25 +824,9 @@ export async function syncQwenRequestPersonalization(
 
   if (isUnauthorized) {
     console.warn(
-      `[Qwen] Personalization 401 — refreshing session and retrying | account=${cacheKey}`,
+      `[Qwen] Personalization 401 — skipping personalization update for account=${cacheKey}`,
     );
-    try {
-      invalidateCookieCache(accountId);
-      const { headers: freshHeaders } = await getQwenHeaders(
-        true,
-        accountId,
-        signal,
-        true,
-      );
-      ({ raw, json } = await attemptPost(freshHeaders));
-    } catch (retryErr) {
-      signal?.throwIfAborted();
-      // Layer 3: Retry failed → non-fatal, continue without personalization
-      console.warn(
-        `[Qwen] Personalization retry failed, continuing without it | account=${cacheKey} | error=${(retryErr as Error).message?.substring(0, 150)}`,
-      );
-      return;
-    }
+    return;
   }
 
   // Layer 3: Check final result — non-fatal on failure

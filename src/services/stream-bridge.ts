@@ -57,7 +57,11 @@ async function ensureStreamBridge(page: Page): Promise<void> {
   );
 }
 
-function startCaptchaWatcher(page: Page, timeoutMs: number) {
+function startCaptchaWatcher(
+  page: Page,
+  timeoutMs: number,
+  onCaptcha?: (reason: string) => void,
+) {
   let finished = false;
   const promise = (async () => {
     const start = Date.now();
@@ -67,6 +71,8 @@ function startCaptchaWatcher(page: Page, timeoutMs: number) {
         const visible = await isAccessVerificationVisible(page).catch(() => false);
         if (visible) {
           console.warn("[Captcha] Access verification detected on page.");
+          onCaptcha?.("FAIL_SYS_USER_VALIDATE");
+          break;
         }
       } catch {}
       await new Promise((r) => setTimeout(r, 1000));
@@ -228,7 +234,12 @@ export async function browserStreamFetch(
   });
   bodyPromise.catch(() => {});
 
-  const watcher = startCaptchaWatcher(page, metaTimeoutMs);
+  const watcher = startCaptchaWatcher(page, metaTimeoutMs, (reason) => {
+    const cb = streamCallbacks.get(reqId);
+    if (cb) {
+      cb.onError(`Qwen anti-bot challenge: ${reason}`);
+    }
+  });
 
   try {
     const stream = new ReadableStream<Uint8Array>({
