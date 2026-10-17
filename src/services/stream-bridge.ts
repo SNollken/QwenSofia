@@ -580,27 +580,11 @@ export async function browserUiStreamFetch(
   await page.waitForTimeout(200);
 
   console.log(`[UIStream 6] Clicking send button...`);
-  const clicked = await page.evaluate(() => {
-    const b = document.querySelector(
-      "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button button, .chat-prompt-send-button",
-    ) as HTMLElement;
-    if (b) {
-      b.click();
-      return true;
-    }
-    return false;
-  }).catch(() => false);
-
-  if (!clicked) {
-    const sendBtn = await page.$(
-      "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button",
-    );
-    if (sendBtn) {
-      await sendBtn.click({ force: true }).catch(() => {});
-    } else {
-      await page.keyboard.press("Enter");
-    }
-  }
+  const sendBtn = await page.waitForSelector(
+    ".chat-prompt-send-button, .message-input-right-button-send button",
+    { timeout: 5000 },
+  );
+  await sendBtn.click();
 
   console.log(`[UIStream 7] Sent! Waiting for URL update if needed...`);
   let detectedChatId = options.chatSessionId || "";
