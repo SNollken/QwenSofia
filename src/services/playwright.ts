@@ -19,6 +19,7 @@ import type { QwenAccount } from "../core/accounts.ts";
 import { config } from "../core/config.ts";
 import { maskEmail } from "../core/logger.ts";
 import { Mutex } from "../core/mutex.ts";
+import { ensureStreamBridge } from "./stream-bridge.ts";
 import {
   clearFingerprintCache,
   getFingerprintProfile,
@@ -476,6 +477,7 @@ export async function initPlaywrightForAccount(
       }
 
       const acctPage = await acctContext.newPage();
+      await ensureStreamBridge(acctPage);
       accountContexts.set(account.id, acctContext);
       accountPages.set(account.id, acctPage);
       touchAccountActivity(account.id);

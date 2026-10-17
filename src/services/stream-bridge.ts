@@ -1,6 +1,7 @@
 import type { Page } from "playwright";
 import crypto from "crypto";
 import { config } from "../core/config.ts";
+import { logger } from "../core/logger.ts";
 import { isAccessVerificationVisible } from "./aliyun-captcha-solver.ts";
 
 const streamCallbacks = new Map<
@@ -22,39 +23,49 @@ const streamCallbacks = new Map<
 const abortControllers = new Map<string, () => void>();
 const pagesWithExposed = new WeakSet<Page>();
 
-async function ensureStreamBridge(page: Page): Promise<void> {
+export async function ensureStreamBridge(page: Page): Promise<void> {
   if (pagesWithExposed.has(page)) return;
   pagesWithExposed.add(page);
-  await page.exposeFunction(
-    "__streamRelay",
-    (reqId: string, type: string, data: any) => {
-      const cb = streamCallbacks.get(reqId);
-      if (!cb) return;
-      switch (type) {
-        case "meta":
-          cb.onMeta(data);
-          break;
-        case "chunk":
-          cb.onChunk(data);
-          break;
-        case "end":
-          cb.onEnd();
-          streamCallbacks.delete(reqId);
-          abortControllers.delete(reqId);
-          break;
-        case "error":
-          cb.onError(data);
-          streamCallbacks.delete(reqId);
-          abortControllers.delete(reqId);
-          break;
-        case "body":
-          cb.onBody(data);
-          streamCallbacks.delete(reqId);
-          abortControllers.delete(reqId);
-          break;
-      }
-    },
-  );
+  try {
+    const exposePromise = page.exposeFunction(
+      "__streamRelay",
+      (reqId: string, type: string, data: any) => {
+        const cb = streamCallbacks.get(reqId);
+        if (!cb) return;
+        switch (type) {
+          case "meta":
+            cb.onMeta(data);
+            break;
+          case "chunk":
+            cb.onChunk(data);
+            break;
+          case "end":
+            cb.onEnd();
+            streamCallbacks.delete(reqId);
+            abortControllers.delete(reqId);
+            break;
+          case "error":
+            cb.onError(data);
+            streamCallbacks.delete(reqId);
+            abortControllers.delete(reqId);
+            break;
+          case "body":
+            cb.onBody(data);
+            streamCallbacks.delete(reqId);
+            abortControllers.delete(reqId);
+            break;
+        }
+      },
+    );
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("exposeFunction timed out")), 2000),
+    );
+    await Promise.race([exposePromise, timeoutPromise]);
+  } catch (err: any) {
+    logger.warn("[StreamBridge] ensureStreamBridge exposeFunction non-fatal:", {
+      error: err?.message,
+    });
+  }
 }
 
 function startCaptchaWatcher(
@@ -104,8 +115,6 @@ export async function browserFetch(
   headers: Record<string, string>;
 }> {
   console.log(`[TRACE BF 1] browserFetch for ${url}...`);
-  await ensureStreamBridge(page);
-  console.log(`[TRACE BF 2] ensureStreamBridge done, calling page.evaluate...`);
   const reqId = crypto.randomUUID();
 
   const timeoutMs = options.timeoutMs || 10000;
