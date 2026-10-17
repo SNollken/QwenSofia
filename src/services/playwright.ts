@@ -484,18 +484,6 @@ export async function initPlaywrightForAccount(
       accountPages.set(account.id, acctPage);
       touchAccountActivity(account.id);
 
-      // Check if already logged in
-      const cookies = await acctContext.cookies();
-      const hasAuthCookie = cookies.some(
-        (c) =>
-          c.name.toLowerCase().includes("token") ||
-          c.name.toLowerCase().includes("session"),
-      );
-
-      if (!hasAuthCookie && account.email && account.password) {
-        await loginToQwen(account.id, account.email, account.password);
-      }
-
       // Navigate to Qwen home to validate session and populate cookies
       try {
         await acctPage.goto("https://chat.qwen.ai/c/new-chat", {

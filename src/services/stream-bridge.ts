@@ -564,7 +564,32 @@ export async function browserUiStreamFetch(
     .catch(() => {});
 
   console.log(`[UIStream 4] Dismissing modal and finding textarea...`);
-  await dismissAgeModalInline(page);
+  await page
+    .evaluate(() => {
+      document
+        .querySelectorAll("#splash-screen, #splash-main-container")
+        .forEach((e) => e.remove());
+      const btns = Array.from(
+        document.querySelectorAll("button, [role=\"button\"]"),
+      );
+      for (const b of btns) {
+        const t = (b.textContent || "").toLowerCase();
+        if (
+          t.includes("aceitar todos") ||
+          t.includes("accept all") ||
+          t.includes("usar apenas") ||
+          t.includes("fechar aviso")
+        ) {
+          (b as HTMLElement).click();
+        }
+      }
+      const closeBtns = document.querySelectorAll(
+        ".close, [aria-label*=\"close\" i], .ant-modal-close",
+      );
+      closeBtns.forEach((b) => (b as HTMLElement).click());
+    })
+    .catch(() => {});
+
   await page.waitForSelector("textarea", { timeout: 15000 });
   await page.focus("textarea");
 
@@ -574,75 +599,62 @@ export async function browserUiStreamFetch(
   );
 
   await page.evaluate((text) => {
-    const ta = document.querySelector("textarea");
-    if (ta) {
-      ta.value = text;
-      ta.dispatchEvent(new Event("input", { bubbles: true }));
-      ta.dispatchEvent(new Event("change", { bubbles: true }));
-    }
     document.execCommand("insertText", false, text);
   }, prompt);
 
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(250);
 
   console.log(`[UIStream 6] Clicking send button...`);
-  const sendBtn = await page.waitForSelector(
+  const sendBtn = await page.$(
     ".chat-prompt-send-button, .message-input-right-button-send button",
-    { timeout: 5000 },
   );
-  await sendBtn.click();
+  if (sendBtn) {
+    await sendBtn.click();
+  }
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
   let detectedChatId = options.chatSessionId || "ui-session";
-  let lastText = "";
-  let lastLength = 0;
-  let hasEnded = false;
-  let pullTicks = 0;
 
   const stream = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        while (!hasEnded && Date.now() - startTime < maxTimeoutMs) {
-          if (options.signal?.aborted) {
-            hasEnded = true;
-            console.log(`[UIStream pull] aborted by signal`);
-            await page
-              .evaluate(() => {
-                const stop = document.querySelector(
-                  ".stop-generating-button, [aria-label*='stop' i]",
-                ) as HTMLElement;
-                stop?.click();
-              })
-              .catch(() => {});
+    start(controller) {
+      let isDone = false;
+      let lastLength = 0;
+      let ticks = 0;
+
+      const intervalId = setInterval(async () => {
+        if (isDone) return;
+        try {
+          ticks++;
+          if (options.signal?.aborted || Date.now() - startTime > maxTimeoutMs) {
+            isDone = true;
+            clearInterval(intervalId);
             controller.close();
             return;
           }
 
-          await page.waitForTimeout(60);
-          pullTicks++;
           const state = await page.evaluate(
             ({ initialResponses }) => {
               const els = document.querySelectorAll(
                 ".response-message-content",
               );
-              if (els.length <= initialResponses) {
-                return { text: "", isGenerating: true, hasMsg: false, totalEls: els.length };
-              }
+              if (els.length <= initialResponses) return null;
               const last = els[els.length - 1];
               const text = last ? last.textContent || "" : "";
               const stopBtn = document.querySelector(
                 ".stop-generating-button, [aria-label*='stop' i], .stop-button",
               );
-              return { text, isGenerating: !!stopBtn, hasMsg: true, totalEls: els.length };
+              return { text, isGenerating: !!stopBtn };
             },
             { initialResponses },
           );
 
-          if (pullTicks % 25 === 0) {
-            console.log(`[UIStream pull #${pullTicks}] state: hasMsg=${state.hasMsg}, totalEls=${state.totalEls}, textLen=${state.text.length}, isGen=${state.isGenerating}`);
+          if (ticks % 25 === 0) {
+            console.log(
+              `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, isGen=${state?.isGenerating ?? false}`,
+            );
           }
 
-          if (state.hasMsg && state.text.length > lastLength) {
+          if (state && state.text.length > lastLength) {
             lastLength = state.text.length;
             console.log(`[UIStream emit] state.text (${lastLength} chars)`);
             const chunk =
@@ -653,33 +665,37 @@ export async function browserUiStreamFetch(
               }) +
               "\n\n";
             controller.enqueue(enc.encode(chunk));
-            return;
           }
 
-          if (state.hasMsg && lastLength > 0 && !state.isGenerating) {
-            hasEnded = true;
+          if (state && lastLength > 0 && !state.isGenerating) {
+            isDone = true;
+            clearInterval(intervalId);
             console.log(`[UIStream complete] Finished with ${lastLength} chars!`);
             controller.enqueue(
               enc.encode(
                 "data: " +
                   JSON.stringify({
                     response_id: detectedChatId,
-                    choices: [{ delta: { content: state.text, phase: "answer" }, finish_reason: "stop" }],
+                    choices: [
+                      {
+                        delta: { content: state.text, phase: "answer" },
+                        finish_reason: "stop",
+                      },
+                    ],
                   }) +
                   "\n\n",
               ),
             );
             controller.enqueue(enc.encode("data: [DONE]\n\n"));
             controller.close();
-            return;
           }
+        } catch (err: any) {
+          isDone = true;
+          clearInterval(intervalId);
+          console.error(`[UIStream error]`, err?.message);
+          controller.error(err);
         }
-        console.log(`[UIStream pull] Exited while loop without completion (timed out)`);
-        controller.close();
-      } catch (err: any) {
-        console.error(`[UIStream pull error]`, err?.message);
-        controller.error(err);
-      }
+      }, 80);
     },
   });
 
