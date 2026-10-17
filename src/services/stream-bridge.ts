@@ -606,10 +606,12 @@ export async function browserUiStreamFetch(
 
   console.log(`[UIStream 6] Clicking send button...`);
   const sendBtn = await page.$(
-    ".chat-prompt-send-button, .message-input-right-button-send button",
+    "button.send-button, button[aria-label*='enviar' i], button[aria-label*='send' i], .chat-prompt-send-button, .message-input-right-button-send button",
   );
   if (sendBtn) {
     await sendBtn.click();
+  } else {
+    await page.keyboard.press("Enter").catch(() => {});
   }
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
@@ -641,7 +643,7 @@ export async function browserUiStreamFetch(
               const last = els[els.length - 1];
               const text = last ? last.textContent || "" : "";
               const stopBtn = document.querySelector(
-                ".stop-generating-button, [aria-label*='stop' i], .stop-button",
+                ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
               );
               return { text, isGenerating: !!stopBtn };
             },
