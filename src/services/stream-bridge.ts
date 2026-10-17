@@ -519,6 +519,7 @@ export async function browserUiStreamFetch(
   status: number;
   contentType: string;
 }> {
+  console.log(`[UIStream 1] Starting browserUiStreamFetch. Current URL: ${page.url()}`);
   options.signal?.throwIfAborted();
   const enc = new TextEncoder();
   const startTime = Date.now();
@@ -526,6 +527,7 @@ export async function browserUiStreamFetch(
 
   if (options.chatSessionId) {
     if (!page.url().includes(`/c/${options.chatSessionId}`)) {
+      console.log(`[UIStream 2] Navigating to existing chat /c/${options.chatSessionId}...`);
       await page.goto(`https://chat.qwen.ai/c/${options.chatSessionId}`, {
         waitUntil: "domcontentloaded",
         timeout: 15000,
@@ -534,6 +536,7 @@ export async function browserUiStreamFetch(
   } else {
     let resetViaSidebar = false;
     if (page.url().includes("chat.qwen.ai")) {
+      console.log(`[UIStream 2] Attempting reset via sidebar...`);
       resetViaSidebar = await page.evaluate(() => {
         const el = document.querySelector(
           ".sidebar-entry-fixed-list-content, [aria-label*='nova' i], .new-chat-button",
@@ -546,6 +549,7 @@ export async function browserUiStreamFetch(
       }).catch(() => false);
     }
     if (!resetViaSidebar && !page.url().includes("/c/new-chat")) {
+      console.log(`[UIStream 2.5] Navigating to /c/new-chat...`);
       await page.goto("https://chat.qwen.ai/c/new-chat", {
         waitUntil: "domcontentloaded",
         timeout: 15000,
@@ -553,15 +557,18 @@ export async function browserUiStreamFetch(
     }
   }
 
+  console.log(`[UIStream 3] Waiting for splash screen hidden...`);
   await page
     .locator("#splash-screen, #splash-main-container")
     .waitFor({ state: "hidden", timeout: 6000 })
     .catch(() => {});
 
+  console.log(`[UIStream 4] Dismissing modal and finding textarea...`);
   await dismissAgeModalInline(page);
   await page.waitForSelector("textarea", { timeout: 15000 });
   await page.focus("textarea");
 
+  console.log(`[UIStream 5] Inserting prompt...`);
   const initialResponses = await page.evaluate(
     () => document.querySelectorAll(".response-message-content").length,
   );
@@ -572,6 +579,7 @@ export async function browserUiStreamFetch(
 
   await page.waitForTimeout(200);
 
+  console.log(`[UIStream 6] Clicking send button...`);
   const clicked = await page.evaluate(() => {
     const b = document.querySelector(
       "button.send-button, .message-input-right-button-send button, .chat-prompt-send-button button, .chat-prompt-send-button",
@@ -594,12 +602,13 @@ export async function browserUiStreamFetch(
     }
   }
 
+  console.log(`[UIStream 7] Sent! Waiting for URL update if needed...`);
   let detectedChatId = options.chatSessionId || "";
   let createdNewChat = false;
 
   if (!options.chatSessionId) {
     await page
-      .waitForURL(/\/c\/[a-f0-9-]+/, { timeout: 10000 })
+      .waitForURL(/\/c\/[a-f0-9-]+/, { timeout: 5000 })
       .catch(() => {});
     const match = page.url().match(/\/c\/([a-f0-9-]+)/);
     if (match) {
@@ -607,6 +616,8 @@ export async function browserUiStreamFetch(
       createdNewChat = true;
     }
   }
+
+  console.log(`[UIStream 8] ChatId: ${detectedChatId}. Returning ReadableStream!`);
 
   let lastText = "";
   let hasEnded = false;
