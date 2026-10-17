@@ -2,6 +2,7 @@ import { config } from "./config.ts";
 
 interface AccountUsage {
   active: number;
+  starts: number[];
   waiting: Array<() => void>;
 }
 
@@ -44,7 +45,7 @@ export async function acquireAccountRequestSlot(
   signal?.throwIfAborted();
   let state = usage.get(accountId);
   if (!state) {
-    state = { active: 0, waiting: [] };
+    state = { active: 0, starts: [], waiting: [] };
     usage.set(accountId, state);
   }
   const accountState = state;
@@ -55,12 +56,17 @@ export async function acquireAccountRequestSlot(
   };
   const grant = (): (() => void) => {
     accountState.active++;
+    const now = Date.now();
+    accountState.starts.push(now);
     peakActivePerAccount = Math.max(peakActivePerAccount, accountState.active);
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      accountState.active--;
+      const idx = accountState.starts.indexOf(now);
+      if (idx === -1) return;
+      accountState.starts.splice(idx, 1);
+      accountState.active = Math.max(0, accountState.active - 1);
       accountState.waiting.shift()?.();
       prune();
     };
@@ -99,3 +105,48 @@ export async function acquireAccountRequestSlot(
     if (signal?.aborted) abort();
   });
 }
+
+export function sweepStaleAccountSlots(
+  now = Date.now(),
+  maxAgeMs = 15 * 60 * 1000,
+): number {
+  let swept = 0;
+  for (const [accountId, state] of usage.entries()) {
+    const alive: number[] = [];
+    let dropped = 0;
+    for (const ts of state.starts) {
+      if (now - ts <= maxAgeMs) {
+        alive.push(ts);
+      } else {
+        dropped++;
+      }
+    }
+    if (dropped > 0) {
+      state.starts = alive;
+      state.active = Math.max(0, state.active - dropped);
+      swept += dropped;
+      console.warn(
+        `[AccountConcurrency] Force-released ${dropped} stale slot(s) for account ${accountId} (held > ${Math.round(maxAgeMs / 1000)}s)`,
+      );
+      for (let i = 0; i < dropped; i++) {
+        state.waiting.shift()?.();
+      }
+      if (state.active === 0 && state.waiting.length === 0) {
+        usage.delete(accountId);
+      }
+    }
+  }
+  return swept;
+}
+
+if (typeof setInterval !== "undefined") {
+  const sweepTimer = setInterval(() => {
+    try {
+      sweepStaleAccountSlots();
+    } catch (err: any) {
+      console.warn("[AccountConcurrency] Stale slot sweep error:", err?.message);
+    }
+  }, 60_000);
+  sweepTimer.unref?.();
+}
+

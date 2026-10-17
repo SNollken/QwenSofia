@@ -30,6 +30,7 @@ import {
   markAccountRateLimited,
   getAccountCooldownInfo,
   clearAccountCooldown,
+  msUntilMidnight,
 } from "../../core/account-manager.ts";
 import { getAccountCredentials, loadAccounts } from "../../core/accounts.ts";
 import { registerStream, removeStream } from "../../core/stream-registry.ts";
@@ -214,7 +215,11 @@ function isAccountUnavailableError(err: any): boolean {
     (err instanceof UpstreamRateLimit &&
       !(err instanceof RetryableQwenStreamError)) ||
     err?.upstreamCode === "RateLimited" ||
+    err?.upstreamCode === "FAIL_SYS_USER_VALIDATE" ||
+    err?.upstreamCode === "RGV587_ERROR" ||
     err?.upstreamStatus === 429 ||
+    err?.upstreamStatus === 403 ||
+    err?.upstreamStatus === 405 ||
     message.includes("allocated quota exceeded") ||
     message.includes("quota exceeded") ||
     message.includes("increase your quota") ||
@@ -225,7 +230,15 @@ function isAccountUnavailableError(err: any): boolean {
     message.includes("pending activation") ||
     message.includes("pendente de ativa") ||
     message.includes("activate your account") ||
-    message.includes("activation link")
+    message.includes("activation link") ||
+    message.includes("fail_sys_user_validate") ||
+    message.includes("_____tmd_____") ||
+    message.includes("rgv587_error") ||
+    message.includes("tmd anti-bot") ||
+    message.includes("waf challenge") ||
+    message.includes("membership") ||
+    message.includes("update_member") ||
+    message.includes("overload")
   );
 }
 
@@ -925,6 +938,28 @@ async function createStreamWithRetry(
       ) {
         cooldownMs = 24 * 60 * 60 * 1000;
         cooldownReason = "PendingActivation";
+      } else if (
+        lower.includes("fail_sys_user_validate") ||
+        lower.includes("rgv587_error") ||
+        lower.includes("_____tmd_____") ||
+        lower.includes("captcha") ||
+        lower.includes("waf challenge")
+      ) {
+        cooldownMs = 24 * 60 * 60 * 1000;
+        cooldownReason = "CaptchaBlocked";
+      } else if (
+        lower.includes("membership") ||
+        lower.includes("update_member")
+      ) {
+        cooldownMs = msUntilMidnight();
+        cooldownReason = "MembershipLimit";
+      } else if (
+        lower.includes("overload") ||
+        lower.includes("alta demanda") ||
+        lower.includes("servidor ocupado")
+      ) {
+        cooldownMs = 5 * 60 * 1000;
+        cooldownReason = "Overload";
       } else if (hourHint) {
         cooldownMs = parseInt(hourHint[1]) * 60 * 60 * 1000;
       } else if (

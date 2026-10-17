@@ -15,6 +15,14 @@ const cooldowns = new Map<string, CooldownEntry>();
 
 const DEFAULT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+export function msUntilMidnight(): number {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  return Math.max(1000, tomorrow.getTime() - now.getTime());
+}
+
 export function markAccountRateLimited(
   accountId: string,
   cooldownMs?: number,

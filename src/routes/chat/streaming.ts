@@ -51,6 +51,7 @@ import {
   applyUpstreamUsage,
   buildUsage,
 } from "./helpers.ts";
+import { isOverloadMessage } from "../../utils/overload-detector.ts";
 
 const INCOMPLETE_TOOL_CALL_MESSAGE =
   "QwenSofia could not recover an incomplete tool call. Please retry the request.";
@@ -410,6 +411,16 @@ export async function processNonStreamingResponse(
               );
             }
 
+            if (isOverloadMessage(errDetails)) {
+              const err = new RetryableQwenStreamError(
+                `Qwen overload: ${errCode}: ${errDetails.substring(0, 200)}`,
+                config.retry.baseDelayMs,
+              ) as any;
+              err.isOverload = true;
+              err.forceNewChat = true;
+              throw err;
+            }
+
             if (isRetryableInvalidInputError(errCode, errDetails)) {
               throw createRetryableInvalidInputError(errCode, errDetails);
             }
@@ -458,6 +469,16 @@ export async function processNonStreamingResponse(
           ) {
             const delta = chunk.choices[0].delta;
 
+            if (delta.extra?.update_member) {
+              const err = new RetryableQwenStreamError(
+                "Qwen account membership limit hit",
+                0,
+              ) as any;
+              err.isMembershipLimit = true;
+              err.forceNewChat = true;
+              throw err;
+            }
+
             if (delta.phase === "thinking_summary") {
               isThinkingChunk = true;
               const formattedSummary = formatThinkingSummaryContent(delta);
@@ -479,6 +500,15 @@ export async function processNonStreamingResponse(
             } else if (delta.phase === "answer") {
               isThinkingChunk = false;
               if (delta.content !== undefined) {
+                if (isOverloadMessage(delta.content)) {
+                  const err = new RetryableQwenStreamError(
+                    "Qwen overload response detected: " + delta.content,
+                    0,
+                  ) as any;
+                  err.isOverload = true;
+                  err.forceNewChat = true;
+                  throw err;
+                }
                 vStr = getAnswerDelta(delta.content || "");
                 if (vStr) {
                   foundStr = true;
@@ -1321,6 +1351,16 @@ export async function processStreamingResponse(
                 );
               }
 
+              if (isOverloadMessage(errDetails)) {
+                const err = new RetryableQwenStreamError(
+                  `Qwen overload: ${errCode}: ${errDetails.substring(0, 200)}`,
+                  config.retry.baseDelayMs,
+                ) as any;
+                err.isOverload = true;
+                err.forceNewChat = true;
+                throw err;
+              }
+
               if (isRetryableInvalidInputError(errCode, errDetails)) {
                 throw createRetryableInvalidInputError(errCode, errDetails);
               }
@@ -1375,6 +1415,16 @@ export async function processStreamingResponse(
             ) {
               const delta = chunk.choices[0].delta;
 
+              if (delta.extra?.update_member) {
+                const err = new RetryableQwenStreamError(
+                  "Qwen account membership limit hit",
+                  0,
+                ) as any;
+                err.isMembershipLimit = true;
+                err.forceNewChat = true;
+                throw err;
+              }
+
               if (delta.phase === "thinking_summary") {
                 isThinkingChunk = true;
                 const formattedSummary = formatThinkingSummaryContent(delta);
@@ -1396,6 +1446,15 @@ export async function processStreamingResponse(
               } else if (delta.phase === "answer") {
                 isThinkingChunk = false;
                 if (delta.content !== undefined) {
+                  if (isOverloadMessage(delta.content)) {
+                    const err = new RetryableQwenStreamError(
+                      "Qwen overload response detected: " + delta.content,
+                      0,
+                    ) as any;
+                    err.isOverload = true;
+                    err.forceNewChat = true;
+                    throw err;
+                  }
                   vStr = getAnswerDelta(delta.content || "");
                   if (vStr) {
                     foundStr = true;

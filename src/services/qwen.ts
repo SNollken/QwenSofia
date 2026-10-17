@@ -25,6 +25,17 @@ import {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export function isTmdChallenge(text: string): boolean {
+  if (!text) return false;
+  return (
+    text.includes("FAIL_SYS_USER_VALIDATE") ||
+    text.includes("_____tmd_____") ||
+    text.includes("RGV587_ERROR") ||
+    text.includes("doctypehtml") ||
+    text.includes("<html")
+  );
+}
+
 function addIdleTimeoutToStream(
   stream: ReadableStream<Uint8Array>,
   controller: AbortController,
@@ -1181,6 +1192,13 @@ async function createQwenChatSession(
       strict: true,
     });
     if (!response.ok) {
+      if (isTmdChallenge(raw)) {
+        throw new QwenUpstreamError(
+          `Qwen TMD anti-bot challenge during create chat: ${raw.substring(0, 300)}`,
+          "FAIL_SYS_USER_VALIDATE",
+          403,
+        );
+      }
       throw new QwenUpstreamError(
         `Qwen create chat failed: ${response.status} ${response.statusText} - ${raw.substring(0, 300)}`,
         "CreateChatFailed",
@@ -1927,6 +1945,27 @@ export async function createQwenStream(
     if (!response.ok || !response.body) {
       const errText = await response.text().catch(() => "");
       const contentType = response.headers.get("content-type") || "";
+
+      // Handle TMD / WAF 405/403 challenges immediately and quarantine account
+      if (
+        response.status === 405 ||
+        response.status === 403 ||
+        isTmdChallenge(errText)
+      ) {
+        logger.warn(
+          `[Qwen] TMD anti-bot / WAF challenge (${response.status}) detected. Quarantining account ${accountId || "unknown"}.`,
+        );
+        if (accountId && accountId !== "global") {
+          markAccountRateLimited(accountId, 24 * 60 * 60 * 1000, "CaptchaBlocked");
+        }
+        throw withCreatedChatMetadata(
+          new QwenUpstreamError(
+            `Qwen anti-bot/WAF challenge detected (${response.status}): ${errText.slice(0, 200)}`,
+            "FAIL_SYS_USER_VALIDATE",
+            403,
+          ),
+        );
+      }
 
       // Handle 502/503/504 as retryable upstream unavailability
       if (

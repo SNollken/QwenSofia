@@ -474,10 +474,28 @@ export async function chatCompletions(c: Context) {
             `[Chat] Stream processing error, retrying with new stream | ${streamErr.message?.substring(0, 150)} | retries left: ${streamProcessingRetries}`,
           );
 
-          // Mark current account for cooldown if it's a quota error
-          if (streamErr.message?.includes("quota")) {
-            const { markAccountRateLimited } =
-              await import("../../core/account-manager.ts");
+          // Mark current account for cooldown
+          const { markAccountRateLimited, msUntilMidnight } =
+            await import("../../core/account-manager.ts");
+          if (
+            (streamErr as any).isMembershipLimit ||
+            streamErr.message?.includes("membership")
+          ) {
+            markAccountRateLimited(
+              currentStreamResult.activeAccountId,
+              msUntilMidnight(),
+              "MembershipLimit",
+            );
+          } else if (
+            (streamErr as any).isOverload ||
+            streamErr.message?.includes("overload")
+          ) {
+            markAccountRateLimited(
+              currentStreamResult.activeAccountId,
+              5 * 60 * 1000,
+              "Overload",
+            );
+          } else if (streamErr.message?.includes("quota")) {
             markAccountRateLimited(
               currentStreamResult.activeAccountId,
               undefined,

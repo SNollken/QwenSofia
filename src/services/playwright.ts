@@ -370,6 +370,31 @@ export async function getBasicHeaders(
   }
 }
 
+export async function dismissAgeModal(page: Page): Promise<void> {
+  try {
+    const modal = page.locator(".age-confirmation-modal");
+    if (
+      (await modal.count()) > 0 &&
+      (await modal.first().isVisible({ timeout: 1500 }).catch(() => false))
+    ) {
+      const continueBtn = page.locator(
+        '.age-confirmation-modal .qwen-chat-v2-btn-black:has-text("Continuar"), ' +
+          '.age-confirmation-modal button:has-text("Continuar"), ' +
+          '.age-confirmation-modal button:has-text("Continue"), ' +
+          '.age-confirmation-modal button:has-text("Confirm"), ' +
+          '.age-confirmation-modal button:has-text("Agree")',
+      );
+      if ((await continueBtn.count()) > 0) {
+        await continueBtn.first().click();
+        await page.waitForTimeout(500);
+        console.log("[Playwright] Age confirmation modal dismissed.");
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function initPlaywrightForAccount(
   account: QwenAccount,
   headless = true,
@@ -472,6 +497,7 @@ export async function initPlaywrightForAccount(
           waitUntil: "domcontentloaded",
           timeout: config.timeouts.navigation,
         });
+        await dismissAgeModal(acctPage);
         const url = acctPage.url();
         if (url.includes("auth") || url.includes("login")) {
           if (account.email && account.password) {
@@ -795,6 +821,7 @@ async function captureHeaders(accountId: string): Promise<void> {
           waitUntil: "domcontentloaded",
           timeout: config.timeouts.navigation,
         });
+        await dismissAgeModal(page);
         await sleep(1500);
         if (resolved) return;
         await page
@@ -835,6 +862,7 @@ export async function refreshHeadersInternal(
           waitUntil: "domcontentloaded",
           timeout: config.timeouts.navigation,
         });
+        await dismissAgeModal(page);
         const url = page.url();
         if (forceReLogin || url.includes("auth") || url.includes("login")) {
           console.log(
