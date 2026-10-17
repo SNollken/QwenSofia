@@ -540,7 +540,7 @@ export async function initPlaywrightForAccount(
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-async function loginToQwen(
+export async function loginToQwen(
   accountId: string,
   email: string,
   password: string,
