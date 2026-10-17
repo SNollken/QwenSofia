@@ -21,7 +21,6 @@ export function buildQwenRequestHeaders(
     ...(opts.extra ?? {}),
     Accept: "application/json, text/plain, */*",
     "Accept-Language": "pt-BR,pt;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br, zstd",
     "Content-Type": "application/json",
     Cookie: opts.cookie,
     Origin: "https://chat.qwen.ai",

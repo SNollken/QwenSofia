@@ -82,6 +82,10 @@ function getAccountMutex(accountId: string): Mutex {
 const accountContexts = new Map<string, BrowserContext>();
 const accountPages = new Map<string, Page>();
 
+export function getPageForAccount(accountId: string): Page | undefined {
+  return accountPages.get(accountId);
+}
+
 // Header cache per account
 interface AccountHeaderCache {
   headers: Record<string, string>;
