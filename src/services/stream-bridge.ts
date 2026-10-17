@@ -574,10 +574,16 @@ export async function browserUiStreamFetch(
   );
 
   await page.evaluate((text) => {
+    const ta = document.querySelector("textarea");
+    if (ta) {
+      ta.value = text;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.dispatchEvent(new Event("change", { bubbles: true }));
+    }
     document.execCommand("insertText", false, text);
   }, prompt);
 
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(150);
 
   console.log(`[UIStream 6] Clicking send button...`);
   const sendBtn = await page.waitForSelector(
@@ -586,23 +592,8 @@ export async function browserUiStreamFetch(
   );
   await sendBtn.click();
 
-  console.log(`[UIStream 7] Sent! Waiting for URL update if needed...`);
-  let detectedChatId = options.chatSessionId || "";
-  let createdNewChat = false;
-
-  if (!options.chatSessionId) {
-    await page
-      .waitForURL(/\/c\/[a-f0-9-]+/, { timeout: 5000 })
-      .catch(() => {});
-    const match = page.url().match(/\/c\/([a-f0-9-]+)/);
-    if (match) {
-      detectedChatId = match[1];
-      createdNewChat = true;
-    }
-  }
-
-  console.log(`[UIStream 8] ChatId: ${detectedChatId}. Returning ReadableStream!`);
-
+  console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
+  let detectedChatId = options.chatSessionId || "ui-session";
   let lastText = "";
   let lastLength = 0;
   let hasEnded = false;
@@ -610,7 +601,6 @@ export async function browserUiStreamFetch(
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
-      console.log(`[UIStream pull] called!`);
       try {
         while (!hasEnded && Date.now() - startTime < maxTimeoutMs) {
           if (options.signal?.aborted) {
@@ -628,7 +618,7 @@ export async function browserUiStreamFetch(
             return;
           }
 
-          await page.waitForTimeout(80);
+          await page.waitForTimeout(60);
           pullTicks++;
           const state = await page.evaluate(
             ({ initialResponses }) => {
@@ -648,19 +638,18 @@ export async function browserUiStreamFetch(
             { initialResponses },
           );
 
-          if (pullTicks % 15 === 0) {
+          if (pullTicks % 25 === 0) {
             console.log(`[UIStream pull #${pullTicks}] state: hasMsg=${state.hasMsg}, totalEls=${state.totalEls}, textLen=${state.text.length}, isGen=${state.isGenerating}`);
           }
 
           if (state.hasMsg && state.text.length > lastLength) {
-            const delta = state.text.slice(lastLength);
             lastLength = state.text.length;
-            console.log(`[UIStream emit] +${delta.length} chars (total ${lastLength})`);
+            console.log(`[UIStream emit] state.text (${lastLength} chars)`);
             const chunk =
               "data: " +
               JSON.stringify({
-                response_id: detectedChatId || "ui-stream",
-                choices: [{ delta: { content: delta, phase: "answer" } }],
+                response_id: detectedChatId,
+                choices: [{ delta: { content: state.text, phase: "answer" } }],
               }) +
               "\n\n";
             controller.enqueue(enc.encode(chunk));
@@ -674,7 +663,8 @@ export async function browserUiStreamFetch(
               enc.encode(
                 "data: " +
                   JSON.stringify({
-                    choices: [{ delta: {}, finish_reason: "stop" }],
+                    response_id: detectedChatId,
+                    choices: [{ delta: { content: state.text, phase: "answer" }, finish_reason: "stop" }],
                   }) +
                   "\n\n",
               ),
@@ -693,6 +683,7 @@ export async function browserUiStreamFetch(
     },
   });
 
+  const createdNewChat = !options.chatSessionId;
   return {
     stream,
     chatSessionId: detectedChatId,

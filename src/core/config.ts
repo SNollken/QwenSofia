@@ -99,7 +99,7 @@ const envSchema = z
     WS_WARNING: z.string().default("50"),
     WS_CRITICAL: z.string().default("100"),
     ACCOUNT_COOLDOWN_MS: z.string().default("60000"),
-    ACCOUNT_MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).max(100).default(2),
+    ACCOUNT_MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).max(100).default(1),
     ACCOUNT_REQUEST_QUEUE_TIMEOUT_MS: z.coerce.number().int().min(1).max(300000).default(120000),
     RETRY_BASE_DELAY_MS: z.string().default("1000"),
     RETRY_MAX_DELAY_MS: z.string().default("10000"),
