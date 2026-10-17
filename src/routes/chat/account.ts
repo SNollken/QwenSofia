@@ -775,17 +775,32 @@ async function createStreamWithRetry(
       try {
         if (params.requestPersonalizationInstruction) {
           console.log(`[TRACE 4] Syncing personalization for ${accountId}...`);
-          await syncQwenRequestPersonalization(
-            params.requestPersonalizationInstruction,
-            accountId === "global" ? undefined : accountId,
-            {
-              model: params.model,
-              toolsCount: params.toolsCount ?? 0,
-              sessionId: params.sessionId,
-              promptChars: params.finalPrompt.length,
-            },
-            params.signal,
-          );
+          try {
+            await Promise.race([
+              syncQwenRequestPersonalization(
+                params.requestPersonalizationInstruction,
+                accountId === "global" ? undefined : accountId,
+                {
+                  model: params.model,
+                  toolsCount: params.toolsCount ?? 0,
+                  sessionId: params.sessionId,
+                  promptChars: params.finalPrompt.length,
+                },
+                params.signal,
+              ),
+              new Promise((_, reject) =>
+                setTimeout(
+                  () =>
+                    reject(
+                      new Error("Personalization sync timed out after 3000ms"),
+                    ),
+                  3000,
+                ),
+              ),
+            ]);
+          } catch (err: any) {
+            console.warn(`[Qwen] Personalization sync skipped: ${err?.message}`);
+          }
         }
 
         console.log(`[TRACE 5] Calling createQwenStream for ${accountId}...`);

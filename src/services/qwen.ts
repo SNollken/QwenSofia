@@ -714,7 +714,7 @@ export async function syncQwenRequestPersonalization(
         {
           method: "GET",
           headers: requestHeaders,
-          signal,
+          signal: AbortSignal.timeout(3000),
         },
       );
       const { json: existingJson } =
@@ -774,7 +774,7 @@ export async function syncQwenRequestPersonalization(
             headers: buildCapturedQwenHeaders(headers, {
               referer: `${config.qwen.baseUrl}/settings/personalization`,
             }),
-            signal,
+            signal: AbortSignal.timeout(3000),
           },
         );
         const { json: settingsJson } =
@@ -802,7 +802,7 @@ export async function syncQwenRequestPersonalization(
         method: "POST",
         headers: reqHeaders,
         body: JSON.stringify(payload),
-        signal,
+        signal: AbortSignal.timeout(3000),
       },
     );
     return readJsonTextResponse(resp);
