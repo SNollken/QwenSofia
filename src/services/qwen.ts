@@ -1157,6 +1157,7 @@ async function createQwenChatSession(
   const page = accountId ? getPageForAccount(accountId) : undefined;
   console.log(`[TRACE B] getPageForAccount(${accountId}) found: ${!!page}`);
   if (page && !page.isClosed()) {
+    console.log(`[TRACE B2] page url: ${page.url()}`);
     try {
       console.log(`[TRACE C] Calling browserFetch /api/v2/chats/new...`);
       const resp = await browserFetch(

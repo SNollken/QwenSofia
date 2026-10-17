@@ -108,23 +108,23 @@ export async function browserFetch(
   console.log(`[TRACE BF 2] ensureStreamBridge done, calling page.evaluate...`);
   const reqId = crypto.randomUUID();
 
-  const timeoutMs = options.timeoutMs || 30000;
+  const timeoutMs = options.timeoutMs || 10000;
   const watcher = startCaptchaWatcher(page, timeoutMs);
 
-  try {
-    if (page.isClosed()) throw new Error("Page is closed");
-    const result = await page.evaluate(
+  const doEvaluate = async () => {
+    return await page.evaluate(
       async ({ url, options }: any) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(
           () => controller.abort(),
-          options.timeoutMs || 30000,
+          options.timeoutMs || 10000,
         );
         try {
           const resp = await fetch(url, {
             method: options.method || "POST",
             headers: options.headers || {},
             body: options.body || undefined,
+            credentials: "include",
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
@@ -147,9 +147,32 @@ export async function browserFetch(
       },
       { url, options, reqId },
     );
+  };
+
+  try {
+    if (page.isClosed()) throw new Error("Page is closed");
+    const result = await doEvaluate();
     console.log(`[TRACE BF 3] page.evaluate finished! status: ${result.status}`);
     return result;
   } catch (err: any) {
+    if (
+      err.message?.includes("Execution context was destroyed") ||
+      err.message?.includes("navigation")
+    ) {
+      console.log(`[TRACE BF 2.5] Navigation detected, waiting for domcontentloaded to retry...`);
+      try {
+        await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
+        if (!page.isClosed()) {
+          const result = await doEvaluate();
+          console.log(`[TRACE BF 3] retry page.evaluate finished! status: ${result.status}`);
+          return result;
+        }
+      } catch (retryErr: any) {
+        throw new Error(`browserFetch context lost: ${retryErr.message}`, {
+          cause: retryErr,
+        });
+      }
+    }
     if (
       err.message?.includes("Execution context was destroyed") ||
       err.message?.includes("Target closed") ||
@@ -299,6 +322,7 @@ export async function browserStreamFetch(
                   method: options.method || "POST",
                   headers: options.headers || {},
                   body: options.body || undefined,
+                  credentials: "include",
                   signal: controller.signal,
                 });
                 clearTimeout(timeoutId);
