@@ -554,7 +554,12 @@ export async function browserUiStreamFetch(
       });
     }
   } else {
-    if (!page.url().includes("/c/new-chat")) {
+    const currentUrl = page.url();
+    const isAlreadyAtRootOrNew =
+      currentUrl === "https://chat.qwen.ai/" ||
+      currentUrl === "https://chat.qwen.ai" ||
+      currentUrl.includes("/c/new-chat");
+    if (!isAlreadyAtRootOrNew) {
       console.log(`[UIStream 2] Navigating to /c/new-chat...`);
       await page.goto("https://chat.qwen.ai/c/new-chat", {
         waitUntil: "domcontentloaded",
@@ -638,46 +643,31 @@ export async function browserUiStreamFetch(
   await page.focus("textarea", { timeout: 3000 }).catch(() => {});
   await page.evaluate((text) => {
     const ta = document.querySelector("textarea");
-    if (!ta) return;
-    ta.focus();
-    const tracker = (ta as any)._valueTracker;
-    if (tracker) {
-      tracker.setValue("");
-    }
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      "value",
-    )?.set;
-    if (setter) {
-      setter.call(ta, text);
-    } else {
+    if (ta) {
+      ta.focus();
       ta.value = text;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-    ta.dispatchEvent(new Event("change", { bubbles: true }));
+    document.execCommand("insertText", false, text);
   }, prompt);
 
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(250);
 
-  console.log(`[UIStream 6] Submitting prompt...`);
-  const clicked = await page
-    .evaluate(() => {
-      const btn = document.querySelector(
-        ".chat-prompt-send-button, .message-input-right-button-send button, button.send-button, button[aria-label*='enviar' i], button[aria-label*='send' i]",
-      ) as HTMLElement;
-      if (btn && !btn.hasAttribute("disabled") && (btn as any).disabled !== true) {
-        btn.click();
-        return true;
-      }
-      return false;
-    })
-    .catch(() => false);
+  console.log(`[UIStream 6] Clicking send button...`);
+  const sendBtn = await page
+    .waitForSelector(
+      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled])",
+      { timeout: 4000 },
+    )
+    .catch(() => null);
 
-  if (clicked) {
-    console.log(`[UIStream 6] Send button clicked via evaluate`);
+  if (sendBtn) {
+    console.log(`[UIStream 6] Send button found, clicking...`);
+    await sendBtn.click({ force: true }).catch(() => {});
   } else {
     console.log(
-      `[UIStream 6] Primary send button not clickable, focusing textarea and pressing Enter...`,
+      `[UIStream 6] Send button not enabled, focusing textarea and pressing Enter...`,
     );
     await page.focus("textarea").catch(() => {});
     await page.keyboard.press("Enter").catch(() => {});
