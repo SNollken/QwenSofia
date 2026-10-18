@@ -636,41 +636,50 @@ export async function browserUiStreamFetch(
   );
 
   await page.focus("textarea", { timeout: 3000 }).catch(() => {});
-  try {
-    await page.fill("textarea", prompt, { timeout: 4000 });
-  } catch {
-    await page.evaluate((text) => {
-      const ta = document.querySelector("textarea");
-      if (!ta) return;
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      if (setter) {
-        setter.call(ta, text);
-      } else {
-        ta.value = text;
-      }
-      ta.dispatchEvent(new Event("input", { bubbles: true }));
-      ta.dispatchEvent(new Event("change", { bubbles: true }));
-    }, prompt);
-  }
+  await page.evaluate((text) => {
+    const ta = document.querySelector("textarea");
+    if (!ta) return;
+    ta.focus();
+    const tracker = (ta as any)._valueTracker;
+    if (tracker) {
+      tracker.setValue("");
+    }
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    if (setter) {
+      setter.call(ta, text);
+    } else {
+      ta.value = text;
+    }
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.dispatchEvent(new Event("change", { bubbles: true }));
+  }, prompt);
 
   await page.waitForTimeout(300);
 
-  console.log(`[UIStream 6] Clicking send button...`);
-  const sendBtn = await page
-    .waitForSelector(
-      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled]), button[class*='send']:not([disabled])",
-      { timeout: 4000 },
-    )
-    .catch(() => null);
+  console.log(`[UIStream 6] Submitting prompt...`);
+  const clicked = await page
+    .evaluate(() => {
+      const btn = document.querySelector(
+        ".chat-prompt-send-button, .message-input-right-button-send button, button.send-button, button[aria-label*='enviar' i], button[aria-label*='send' i]",
+      ) as HTMLElement;
+      if (btn && !btn.hasAttribute("disabled") && (btn as any).disabled !== true) {
+        btn.click();
+        return true;
+      }
+      return false;
+    })
+    .catch(() => false);
 
-  if (sendBtn) {
-    console.log(`[UIStream 6] Send button found, clicking...`);
-    await sendBtn.click({ force: true }).catch(() => {});
+  if (clicked) {
+    console.log(`[UIStream 6] Send button clicked via evaluate`);
   } else {
-    console.log(`[UIStream 6] Send button not enabled, pressing Enter...`);
+    console.log(
+      `[UIStream 6] Primary send button not clickable, focusing textarea and pressing Enter...`,
+    );
+    await page.focus("textarea").catch(() => {});
     await page.keyboard.press("Enter").catch(() => {});
   }
 
