@@ -81,6 +81,13 @@ test("getIncrementalDelta: handles long cumulative streams without duplicating p
   assert.strictEqual(res.matchedContent, nextChunk);
 });
 
+test("formatThinkingSummaryContent: handles string content directly", () => {
+  const formatted = formatThinkingSummaryContent({
+    content: "Pensando na resposta...",
+  });
+  assert.strictEqual(formatted, "Pensando na resposta...");
+});
+
 test("formatThinkingSummaryContent: combines titles and thoughts by section", () => {
   const formatted = formatThinkingSummaryContent({
     extra: {

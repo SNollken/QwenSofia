@@ -88,6 +88,10 @@ export function getIncrementalDelta(
 }
 
 export function formatThinkingSummaryContent(delta: any): string {
+  if (typeof delta?.content === "string" && delta.content) {
+    return delta.content;
+  }
+
   const titles = Array.isArray(delta?.extra?.summary_title?.content)
     ? delta.extra.summary_title.content.filter(
         (item: unknown): item is string => typeof item === "string",

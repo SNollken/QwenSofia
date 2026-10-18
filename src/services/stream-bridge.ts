@@ -651,7 +651,7 @@ export async function browserUiStreamFetch(
     () => document.querySelectorAll(".response-message-content").length,
   );
 
-  await page.focus("textarea");
+  await page.focus("textarea", { timeout: 3000 }).catch(() => {});
   await page.evaluate((text) => {
     const ta = document.querySelector("textarea");
     if (ta) {
@@ -721,7 +721,19 @@ export async function browserUiStreamFetch(
                 ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
               );
               const thoughtText = thoughtEl ? thoughtEl.textContent || "" : "";
-              const text = last ? last.textContent || "" : "";
+              let text = "";
+              if (last) {
+                if (thoughtEl) {
+                  const clone = last.cloneNode(true) as HTMLElement;
+                  const clonedThought = clone.querySelector(
+                    ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
+                  );
+                  clonedThought?.remove();
+                  text = clone.textContent || "";
+                } else {
+                  text = last.textContent || "";
+                }
+              }
               const stopBtn = document.querySelector(
                 ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
               );
