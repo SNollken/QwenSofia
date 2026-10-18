@@ -760,41 +760,6 @@ export async function browserUiStreamFetch(
               controller.enqueue(enc.encode("data: [DONE]\n\n"));
               controller.close();
             } catch {}
-
-            // Pré-aquecimento em background para a próxima requisição
-            setTimeout(async () => {
-              try {
-                if (!page.isClosed()) {
-                  await page.goto("https://chat.qwen.ai/c/new-chat", {
-                    waitUntil: "domcontentloaded",
-                    timeout: 10000,
-                  });
-                  await page
-                    .evaluate(() => {
-                      document
-                        .querySelectorAll("#splash-screen, #splash-main-container")
-                        .forEach((e) => e.remove());
-                      const btns = Array.from(
-                        document.querySelectorAll("button, [role=\"button\"]"),
-                      );
-                      for (const b of btns) {
-                        const t = (b.textContent || "").toLowerCase();
-                        if (
-                          t.includes("aceitar todos") ||
-                          t.includes("accept all") ||
-                          t.includes("usar apenas") ||
-                          t.includes("fechar aviso")
-                        ) {
-                          (b as HTMLElement).click();
-                        }
-                      }
-                    })
-                    .catch(() => {});
-                }
-              } catch {
-                /* ignore background pre-warm */
-              }
-            }, 600);
           }
         } catch (err: any) {
           if (!isDone) {
