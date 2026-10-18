@@ -760,6 +760,18 @@ export async function browserUiStreamFetch(
                     return { text, thoughtText, isGenerating: !!stopBtn };
                   }
                 }
+                const stopBtn = document.querySelector(
+                  ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
+                );
+                if (stopBtn) {
+                  const thoughtEl = document.querySelector(
+                    ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details, [class*='think']",
+                  );
+                  const thoughtText = thoughtEl
+                    ? thoughtEl.textContent || ""
+                    : "";
+                  return { text: "", thoughtText, isGenerating: true };
+                }
                 return null;
               }
               const last = els[els.length - 1];
@@ -819,6 +831,12 @@ export async function browserUiStreamFetch(
             console.log(
               `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, thoughtLen=${state?.thoughtText?.length ?? 0}, isGen=${state?.isGenerating ?? false} | DOM: ${JSON.stringify(domDebug)}`,
             );
+          }
+
+          if (ticks % 10 === 0) {
+            try {
+              controller.enqueue(enc.encode(": heartbeat\n\n"));
+            } catch {}
           }
 
           // 1. Emite pensamento/raciocínio se presente
