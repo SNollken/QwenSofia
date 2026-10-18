@@ -1715,17 +1715,6 @@ export async function createQwenStream(
   tokenEstimationContext: TokenEstimationContext;
 }> {
   options?.signal?.throwIfAborted();
-  console.log(`[TRACE 6] createQwenStream getting headers for ${accountId}...`);
-  // A new logical chat session should reuse the warmed header cache when available.
-  // Header recapture is much more expensive and should be reserved for real refresh/login cases,
-  // not for ordinary first prompts that simply need parent_id reset.
-  const captured = await getQwenHeaders(
-    options?.forceNewChat === true,
-    accountId,
-    options?.signal,
-  );
-  console.log(`[TRACE 7] Headers retrieved for ${accountId}!`);
-  const { headers, parentMessageId } = captured;
   const model = modelId.replace("-no-thinking", "");
 
   const page = accountId
@@ -1733,7 +1722,18 @@ export async function createQwenStream(
     : undefined;
   if (page && !page.isClosed() && !isAuthMockEnabled()) {
     try {
-      console.log(`[Qwen] Initiating direct browser UI stream for ${accountId}...`);
+      console.log(`[Qwen] Fast-path direct browser UI stream for ${accountId}...`);
+      const basic = await getBasicHeaders(accountId, options?.signal).catch(() => null);
+      const headers: Record<string, string> = basic
+        ? {
+            cookie: basic.cookie,
+            "user-agent": basic.userAgent,
+            "bx-v": basic.bxV,
+            "bx-ua": basic.bxUa,
+            "bx-umidtoken": basic.bxUmidtoken,
+          }
+        : {};
+
       const uiResult = await browserUiStreamFetch(page, prompt, {
         chatSessionId: options?.chatSessionId || undefined,
         modelId,
@@ -1763,6 +1763,18 @@ export async function createQwenStream(
       );
     }
   }
+
+  console.log(`[TRACE 6] createQwenStream getting headers for ${accountId}...`);
+  // A new logical chat session should reuse the warmed header cache when available.
+  // Header recapture is much more expensive and should be reserved for real refresh/login cases,
+  // not for ordinary first prompts that simply need parent_id reset.
+  const captured = await getQwenHeaders(
+    options?.forceNewChat === true,
+    accountId,
+    options?.signal,
+  );
+  console.log(`[TRACE 7] Headers retrieved for ${accountId}!`);
+  const { headers, parentMessageId } = captured;
 
   let createdNewChat = false;
   let chatSessionId: string | null | undefined;

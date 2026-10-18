@@ -579,13 +579,7 @@ export async function browserUiStreamFetch(
     }
   }
 
-  console.log(`[UIStream 3] Waiting for splash screen hidden...`);
-  await page
-    .locator("#splash-screen, #splash-main-container")
-    .waitFor({ state: "hidden", timeout: 6000 })
-    .catch(() => {});
-
-  console.log(`[UIStream 4] Dismissing modal and finding textarea...`);
+  console.log(`[UIStream 3] Cleaning overlays and finding textarea...`);
   await page
     .evaluate(() => {
       document
@@ -612,7 +606,7 @@ export async function browserUiStreamFetch(
     })
     .catch(() => {});
 
-  await page.waitForSelector("textarea", { timeout: 15000 });
+  await page.waitForSelector("textarea", { timeout: 8000 });
   await page.focus("textarea");
 
   if (options.files && options.files.length > 0) {
