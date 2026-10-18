@@ -554,24 +554,8 @@ export async function browserUiStreamFetch(
       });
     }
   } else {
-    let resetViaSidebar = false;
-    if (page.url().includes("chat.qwen.ai")) {
-      console.log(`[UIStream 2] Attempting reset via sidebar...`);
-      resetViaSidebar = await page
-        .evaluate(() => {
-          const el = document.querySelector(
-            ".sidebar-entry-fixed-list-content, [aria-label*='nova' i], .new-chat-button",
-          ) as HTMLElement;
-          if (el) {
-            el.click();
-            return true;
-          }
-          return false;
-        })
-        .catch(() => false);
-    }
-    if (!resetViaSidebar && !page.url().includes("/c/new-chat")) {
-      console.log(`[UIStream 2.5] Navigating to /c/new-chat...`);
+    if (!page.url().includes("/c/new-chat")) {
+      console.log(`[UIStream 2] Navigating to /c/new-chat...`);
       await page.goto("https://chat.qwen.ai/c/new-chat", {
         waitUntil: "domcontentloaded",
         timeout: 15000,
@@ -652,30 +636,41 @@ export async function browserUiStreamFetch(
   );
 
   await page.focus("textarea", { timeout: 3000 }).catch(() => {});
-  await page.evaluate((text) => {
-    const ta = document.querySelector("textarea");
-    if (ta) {
-      ta.focus();
-      ta.value = text;
+  try {
+    await page.fill("textarea", prompt, { timeout: 4000 });
+  } catch {
+    await page.evaluate((text) => {
+      const ta = document.querySelector("textarea");
+      if (!ta) return;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      if (setter) {
+        setter.call(ta, text);
+      } else {
+        ta.value = text;
+      }
       ta.dispatchEvent(new Event("input", { bubbles: true }));
       ta.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    document.execCommand("insertText", false, text);
-  }, prompt);
+    }, prompt);
+  }
 
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
 
   console.log(`[UIStream 6] Clicking send button...`);
   const sendBtn = await page
     .waitForSelector(
-      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled])",
+      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled]), button[class*='send']:not([disabled])",
       { timeout: 4000 },
     )
     .catch(() => null);
 
   if (sendBtn) {
+    console.log(`[UIStream 6] Send button found, clicking...`);
     await sendBtn.click({ force: true }).catch(() => {});
   } else {
+    console.log(`[UIStream 6] Send button not enabled, pressing Enter...`);
     await page.keyboard.press("Enter").catch(() => {});
   }
 
@@ -711,9 +706,36 @@ export async function browserUiStreamFetch(
           const state = await page.evaluate(
             ({ initialResponses }) => {
               const els = document.querySelectorAll(
-                ".response-message-content",
+                ".response-message-content, [class*='response-message-content'], [data-message-author-role='assistant']",
               );
-              if (els.length <= initialResponses) return null;
+              if (els.length <= initialResponses) {
+                if (els.length > 0) {
+                  const lastEl = els[els.length - 1];
+                  const hasTxt = (lastEl.textContent || "").trim().length > 0;
+                  const stopBtn = document.querySelector(
+                    ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
+                  );
+                  if (hasTxt || stopBtn) {
+                    const thoughtEl = lastEl.querySelector(
+                      ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
+                    );
+                    const thoughtText = thoughtEl ? thoughtEl.textContent || "" : "";
+                    let text = "";
+                    if (thoughtEl) {
+                      const clone = lastEl.cloneNode(true) as HTMLElement;
+                      const clonedThought = clone.querySelector(
+                        ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
+                      );
+                      clonedThought?.remove();
+                      text = clone.textContent || "";
+                    } else {
+                      text = lastEl.textContent || "";
+                    }
+                    return { text, thoughtText, isGenerating: !!stopBtn };
+                  }
+                }
+                return null;
+              }
               const last = els[els.length - 1];
 
               // Procura bloco de pensamento / raciocínio dedicado
