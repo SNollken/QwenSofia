@@ -374,6 +374,37 @@ export const getBasicHeaders = getPlaywrightBasicHeaders;
 
 export async function dismissAgeModal(page: Page): Promise<void> {
   try {
+    await page
+      .evaluate(() => {
+        // 1. Remove splash screens
+        document
+          .querySelectorAll("#splash-screen, #splash-main-container")
+          .forEach((e) => e.remove());
+
+        // 2. Cookie banner buttons
+        const btns = Array.from(
+          document.querySelectorAll("button, [role=\"button\"]"),
+        );
+        for (const b of btns) {
+          const t = (b.textContent || "").toLowerCase();
+          if (
+            t.includes("aceitar todos") ||
+            t.includes("accept all") ||
+            t.includes("usar apenas") ||
+            t.includes("fechar aviso")
+          ) {
+            (b as HTMLElement).click();
+          }
+        }
+
+        // 3. Modals and age confirmation
+        const closeBtns = document.querySelectorAll(
+          ".close, [aria-label*=\"close\" i], .ant-modal-close, .age-confirmation-modal button",
+        );
+        closeBtns.forEach((b) => (b as HTMLElement).click());
+      })
+      .catch(() => {});
+
     const modal = page.locator(".age-confirmation-modal");
     if (
       (await modal.count()) > 0 &&
