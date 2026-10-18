@@ -38,6 +38,7 @@ import { sendOpenAIError, createError } from "../../api/error-helpers.js";
 import { classifyError } from "../../api/error-classifier.js";
 import type { QwenBridgeStatusCode } from "../../core/errors.js";
 import { config } from "../../core/config.js";
+import { getPageForAccount } from "../../services/playwright.ts";
 import { parseQwenErrorPayload } from "./errors.ts";
 import {
   logTokenEstimationSample,
@@ -917,6 +918,20 @@ export async function processStreamingResponse(
       }
 
       try {
+        if (activeAccountId) {
+          const page = getPageForAccount(activeAccountId);
+          if (page && !page.isClosed()) {
+            void page
+              .evaluate(() => {
+                const btn = document.querySelector(
+                  ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
+                ) as HTMLElement;
+                btn?.click();
+              })
+              .catch(() => {});
+          }
+        }
+
         const streamData = getStream(completionId);
         if (streamData && currentUiSessionId) {
           const targetResponseId = streamData.targetResponseId;
