@@ -29,22 +29,30 @@ import { subtlePageActivity } from "./human-behavior.ts";
 
 // Try to import playwright-extra and stealth, fallback to regular playwright
 let chromiumWithStealth: typeof chromium | null = null;
+let stealthInitPromise: Promise<void> | null = null;
 
-try {
-  const pwExtra = await import("playwright-extra");
-  const stealth = await import("puppeteer-extra-plugin-stealth");
+async function ensureStealthLoaded(): Promise<void> {
+  if (stealthInitPromise) return stealthInitPromise;
+  stealthInitPromise = (async () => {
+    try {
+      const pwExtra = await import("playwright-extra");
+      const stealth = await import("puppeteer-extra-plugin-stealth");
 
-  if (pwExtra.chromium && stealth.default) {
-    const plugin = stealth.default();
-    pwExtra.chromium.use(plugin);
-    chromiumWithStealth = pwExtra.chromium;
-    console.log("🛡️  [Playwright] Stealth plugin loaded");
-  }
-} catch {
-  console.warn(
-    "⚠️  [Playwright] playwright-extra/stealth not available, using regular playwright",
-  );
+      if (pwExtra.chromium && stealth.default) {
+        const plugin = stealth.default();
+        pwExtra.chromium.use(plugin);
+        chromiumWithStealth = pwExtra.chromium;
+        console.log("🛡️  [Playwright] Stealth plugin loaded");
+      }
+    } catch {
+      console.warn(
+        "⚠️  [Playwright] playwright-extra/stealth not available, using regular playwright",
+      );
+    }
+  })();
+  return stealthInitPromise;
 }
+void ensureStealthLoaded();
 
 export type BrowserType = "chromium" | "chrome" | "edge";
 
@@ -499,6 +507,7 @@ export async function initPlaywrightForAccount(
     );
 
     // Use playwright-extra with stealth if available, otherwise regular chromium
+    await ensureStealthLoaded();
     const engineToUse = chromiumWithStealth || engine;
 
     const acctContext = await engineToUse.launchPersistentContext(profilePath, {
@@ -525,9 +534,7 @@ export async function initPlaywrightForAccount(
         "--no-default-browser-check",
         "--no-sandbox",
         "--disable-dev-shm-usage",
-        "--enable-webgl",
-        "--ignore-gpu-blocklist",
-        "--enable-accelerated-2d-canvas",
+        "--disable-gpu",
         `--window-size=${fingerprint.viewport.width},${fingerprint.viewport.height}`,
         "--disable-extensions",
         "--disable-background-networking",
