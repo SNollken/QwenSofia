@@ -22,6 +22,7 @@ import {
   browserUiStreamFetch,
 } from "./stream-bridge.ts";
 import { markAccountRateLimited } from "../core/account-manager.ts";
+import { rotateTorCircuitForProxy } from "../utils/tor-rotator.ts";
 import {
   MAX_PAYLOAD_SIZE,
   QWEN_PRIMARY_CONTEXT_WINDOW,
@@ -2087,6 +2088,7 @@ export async function createQwenStream(
         );
         if (accountId && accountId !== "global") {
           markAccountRateLimited(accountId, 24 * 60 * 60 * 1000, "CaptchaBlocked");
+          void rotateTorCircuitForProxy(process.env.PLAYWRIGHT_PROXY);
         }
         throw withCreatedChatMetadata(
           new QwenUpstreamError(

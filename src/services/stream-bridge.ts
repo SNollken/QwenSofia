@@ -525,9 +525,28 @@ export async function browserUiStreamFetch(
   const startTime = Date.now();
   const maxTimeoutMs = options.timeoutMs || 120000;
 
-  if (options.chatSessionId) {
+  // Ciclo de vida do DOM: se a aba acumular muitas mensagens (> 15), recicla para /c/new-chat
+  const currentMsgCount = await page
+    .evaluate(
+      () => document.querySelectorAll(".response-message-content").length,
+    )
+    .catch(() => 0);
+
+  if (currentMsgCount > 15 && !options.chatSessionId) {
+    console.log(
+      `[UIStream Lifecycle] Cycling DOM (msgs=${currentMsgCount}) -> /c/new-chat`,
+    );
+    await page
+      .goto("https://chat.qwen.ai/c/new-chat", {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      })
+      .catch(() => {});
+  } else if (options.chatSessionId) {
     if (!page.url().includes(`/c/${options.chatSessionId}`)) {
-      console.log(`[UIStream 2] Navigating to existing chat /c/${options.chatSessionId}...`);
+      console.log(
+        `[UIStream 2] Navigating to existing chat /c/${options.chatSessionId}...`,
+      );
       await page.goto(`https://chat.qwen.ai/c/${options.chatSessionId}`, {
         waitUntil: "domcontentloaded",
         timeout: 15000,
@@ -537,16 +556,18 @@ export async function browserUiStreamFetch(
     let resetViaSidebar = false;
     if (page.url().includes("chat.qwen.ai")) {
       console.log(`[UIStream 2] Attempting reset via sidebar...`);
-      resetViaSidebar = await page.evaluate(() => {
-        const el = document.querySelector(
-          ".sidebar-entry-fixed-list-content, [aria-label*='nova' i], .new-chat-button",
-        ) as HTMLElement;
-        if (el) {
-          el.click();
-          return true;
-        }
-        return false;
-      }).catch(() => false);
+      resetViaSidebar = await page
+        .evaluate(() => {
+          const el = document.querySelector(
+            ".sidebar-entry-fixed-list-content, [aria-label*='nova' i], .new-chat-button",
+          ) as HTMLElement;
+          if (el) {
+            el.click();
+            return true;
+          }
+          return false;
+        })
+        .catch(() => false);
     }
     if (!resetViaSidebar && !page.url().includes("/c/new-chat")) {
       console.log(`[UIStream 2.5] Navigating to /c/new-chat...`);
@@ -634,6 +655,7 @@ export async function browserUiStreamFetch(
       let isDone = false;
       let isProcessing = false;
       let lastLength = 0;
+      let lastThoughtLength = 0;
       let ticks = 0;
 
       const intervalId = setInterval(async () => {
@@ -657,11 +679,17 @@ export async function browserUiStreamFetch(
               );
               if (els.length <= initialResponses) return null;
               const last = els[els.length - 1];
+
+              // Procura bloco de pensamento / raciocínio dedicado
+              const thoughtEl = last.querySelector(
+                ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
+              );
+              const thoughtText = thoughtEl ? thoughtEl.textContent || "" : "";
               const text = last ? last.textContent || "" : "";
               const stopBtn = document.querySelector(
                 ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
               );
-              return { text, isGenerating: !!stopBtn };
+              return { text, thoughtText, isGenerating: !!stopBtn };
             },
             { initialResponses },
           );
@@ -670,13 +698,33 @@ export async function browserUiStreamFetch(
 
           if (ticks % 25 === 0) {
             console.log(
-              `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, isGen=${state?.isGenerating ?? false}`,
+              `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, thoughtLen=${state?.thoughtText?.length ?? 0}, isGen=${state?.isGenerating ?? false}`,
             );
           }
 
+          // 1. Emite pensamento/raciocínio se presente
+          if (state?.thoughtText && state.thoughtText.length > lastThoughtLength) {
+            lastThoughtLength = state.thoughtText.length;
+            const thoughtChunk =
+              "data: " +
+              JSON.stringify({
+                response_id: detectedChatId,
+                choices: [
+                  {
+                    delta: {
+                      content: state.thoughtText,
+                      phase: "thinking_summary",
+                    },
+                  },
+                ],
+              }) +
+              "\n\n";
+            try { controller.enqueue(enc.encode(thoughtChunk)); } catch {}
+          }
+
+          // 2. Emite resposta textual
           if (state && state.text.length > lastLength) {
             lastLength = state.text.length;
-            console.log(`[UIStream emit] state.text (${lastLength} chars)`);
             const chunk =
               "data: " +
               JSON.stringify({
@@ -687,10 +735,12 @@ export async function browserUiStreamFetch(
             try { controller.enqueue(enc.encode(chunk)); } catch {}
           }
 
-          if (state && lastLength > 0 && !state.isGenerating) {
+          if (state && (lastLength > 0 || lastThoughtLength > 0) && !state.isGenerating) {
             isDone = true;
             clearInterval(intervalId);
-            console.log(`[UIStream complete] Finished with ${lastLength} chars!`);
+            console.log(
+              `[UIStream complete] Finished with text=${lastLength} chars, thought=${lastThoughtLength} chars!`,
+            );
             try {
               controller.enqueue(
                 enc.encode(
