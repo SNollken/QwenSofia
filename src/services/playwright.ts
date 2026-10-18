@@ -84,7 +84,43 @@ const accountContexts = new Map<string, BrowserContext>();
 const accountPages = new Map<string, Page>();
 
 export function getPageForAccount(accountId: string): Page | undefined {
-  return accountPages.get(accountId);
+  const page = accountPages.get(accountId);
+  if (page && page.isClosed()) {
+    accountPages.delete(accountId);
+    return undefined;
+  }
+  return page;
+}
+
+export async function ensurePageForAccount(
+  accountId: string,
+): Promise<Page | undefined> {
+  let page = getPageForAccount(accountId);
+  if (page && !page.isClosed()) {
+    return page;
+  }
+
+  const context = accountContexts.get(accountId);
+  if (!context) return undefined;
+
+  try {
+    console.log(
+      `[Playwright] Recreating closed page for account=${accountId}...`,
+    );
+    page = await context.newPage();
+    await page.goto("https://chat.qwen.ai/c/new-chat", {
+      waitUntil: "domcontentloaded",
+      timeout: 15000,
+    });
+    await dismissAgeModal(page);
+    accountPages.set(accountId, page);
+    return page;
+  } catch (err: any) {
+    console.warn(
+      `[Playwright] Failed to recreate page for account=${accountId}: ${err.message}`,
+    );
+    return undefined;
+  }
 }
 
 // Header cache per account

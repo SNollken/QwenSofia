@@ -15,7 +15,11 @@ import type {
   TokenEstimationContext,
 } from "./token-estimation-metrics.ts";
 import { getDatabase } from "../core/database.ts";
-import { invalidateCookieCache, getPageForAccount } from "./playwright.ts";
+import {
+  invalidateCookieCache,
+  getPageForAccount,
+  ensurePageForAccount,
+} from "./playwright.ts";
 import {
   browserFetch,
   browserStreamFetch,
@@ -1724,7 +1728,9 @@ export async function createQwenStream(
   const { headers, parentMessageId } = captured;
   const model = modelId.replace("-no-thinking", "");
 
-  const page = accountId ? getPageForAccount(accountId) : undefined;
+  const page = accountId
+    ? (await ensurePageForAccount(accountId)) ?? getPageForAccount(accountId)
+    : undefined;
   if (page && !page.isClosed() && !isAuthMockEnabled()) {
     try {
       console.log(`[Qwen] Initiating direct browser UI stream for ${accountId}...`);
