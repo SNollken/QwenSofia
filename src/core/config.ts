@@ -107,7 +107,7 @@ const envSchema = z
     ANTI_BOT_MAX_DELAY_MS: z.string().default("30000"),
     QWEN_BASE_URL: z.string().default("https://chat.qwen.ai"),
     QWEN_CHAT_POOL_SIZE: z.string().default("1"),
-    QWEN_PERSONALIZATION_FROM_REQUEST: z.string().default("true"),
+    QWEN_PERSONALIZATION_FROM_REQUEST: z.string().default("false"),
     QWEN_PERSONALIZATION_VERIFY_GET: z.string().default("true"),
     DELETE_ALL_CHATS_ON_SHUTDOWN: z.string().default("false"),
     SESSION_KEEP_ALIVE_ENABLED: z.string().default("false"),
