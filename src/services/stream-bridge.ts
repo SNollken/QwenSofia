@@ -565,6 +565,10 @@ export async function browserUiStreamFetch(
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
+      await page
+        .waitForLoadState("networkidle", { timeout: 3500 })
+        .catch(() => {});
+      await page.waitForTimeout(500);
     }
   }
 
@@ -671,6 +675,29 @@ export async function browserUiStreamFetch(
     );
     await page.focus("textarea").catch(() => {});
     await page.keyboard.press("Enter").catch(() => {});
+  }
+
+  // Self-healing check: if textarea still retains the prompt, retry submit
+  await page.waitForTimeout(400);
+  const stillHasPrompt = await page
+    .evaluate(() => {
+      const ta = document.querySelector("textarea");
+      return (ta?.value || "").trim().length > 0;
+    })
+    .catch(() => false);
+
+  if (stillHasPrompt) {
+    console.log(
+      `[UIStream 6.5] Textarea retained content after click, retrying submit via Enter and button...`,
+    );
+    await page.focus("textarea").catch(() => {});
+    await page.keyboard.press("Enter").catch(() => {});
+    const retryBtn = await page.$(
+      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled])",
+    );
+    if (retryBtn) {
+      await retryBtn.click({ force: true }).catch(() => {});
+    }
   }
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
