@@ -767,8 +767,31 @@ export async function browserUiStreamFetch(
           if (isDone) return;
 
           if (ticks % 25 === 0) {
+            const domDebug = await page
+              .evaluate(() => {
+                const ta = document.querySelector("textarea");
+                const taVal = ta ? (ta.value || "").slice(0, 30) : "no-ta";
+                const msgEls = document.querySelectorAll(
+                  "[class*='message']",
+                ).length;
+                const resEls = document.querySelectorAll(
+                  ".response-message-content",
+                ).length;
+                const stopBtn = !!document.querySelector(
+                  ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
+                );
+                return {
+                  taVal,
+                  msgEls,
+                  resEls,
+                  stopBtn,
+                  url: window.location.href,
+                };
+              })
+              .catch(() => null);
+
             console.log(
-              `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, thoughtLen=${state?.thoughtText?.length ?? 0}, isGen=${state?.isGenerating ?? false}`,
+              `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, thoughtLen=${state?.thoughtText?.length ?? 0}, isGen=${state?.isGenerating ?? false} | DOM: ${JSON.stringify(domDebug)}`,
             );
           }
 
