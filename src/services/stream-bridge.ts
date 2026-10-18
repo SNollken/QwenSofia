@@ -598,18 +598,30 @@ export async function browserUiStreamFetch(
     () => document.querySelectorAll(".response-message-content").length,
   );
 
+  await page.focus("textarea");
   await page.evaluate((text) => {
+    const ta = document.querySelector("textarea");
+    if (ta) {
+      ta.focus();
+      ta.value = text;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.dispatchEvent(new Event("change", { bubbles: true }));
+    }
     document.execCommand("insertText", false, text);
   }, prompt);
 
   await page.waitForTimeout(250);
 
   console.log(`[UIStream 6] Clicking send button...`);
-  const sendBtn = await page.$(
-    "button.send-button, button[aria-label*='enviar' i], button[aria-label*='send' i], .chat-prompt-send-button, .message-input-right-button-send button",
-  );
+  const sendBtn = await page
+    .waitForSelector(
+      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled])",
+      { timeout: 4000 },
+    )
+    .catch(() => null);
+
   if (sendBtn) {
-    await sendBtn.click();
+    await sendBtn.click({ force: true }).catch(() => {});
   } else {
     await page.keyboard.press("Enter").catch(() => {});
   }
@@ -620,17 +632,21 @@ export async function browserUiStreamFetch(
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let isDone = false;
+      let isProcessing = false;
       let lastLength = 0;
       let ticks = 0;
 
       const intervalId = setInterval(async () => {
-        if (isDone) return;
+        if (isDone || isProcessing) return;
+        isProcessing = true;
         try {
           ticks++;
           if (options.signal?.aborted || Date.now() - startTime > maxTimeoutMs) {
-            isDone = true;
-            clearInterval(intervalId);
-            controller.close();
+            if (!isDone) {
+              isDone = true;
+              clearInterval(intervalId);
+              try { controller.close(); } catch {}
+            }
             return;
           }
 
@@ -650,6 +666,8 @@ export async function browserUiStreamFetch(
             { initialResponses },
           );
 
+          if (isDone) return;
+
           if (ticks % 25 === 0) {
             console.log(
               `[UIStream tick #${ticks}] hasState=${!!state}, textLen=${state?.text?.length ?? 0}, isGen=${state?.isGenerating ?? false}`,
@@ -666,38 +684,44 @@ export async function browserUiStreamFetch(
                 choices: [{ delta: { content: state.text, phase: "answer" } }],
               }) +
               "\n\n";
-            controller.enqueue(enc.encode(chunk));
+            try { controller.enqueue(enc.encode(chunk)); } catch {}
           }
 
           if (state && lastLength > 0 && !state.isGenerating) {
             isDone = true;
             clearInterval(intervalId);
             console.log(`[UIStream complete] Finished with ${lastLength} chars!`);
-            controller.enqueue(
-              enc.encode(
-                "data: " +
-                  JSON.stringify({
-                    response_id: detectedChatId,
-                    choices: [
-                      {
-                        delta: { content: state.text, phase: "answer" },
-                        finish_reason: "stop",
-                      },
-                    ],
-                  }) +
-                  "\n\n",
-              ),
-            );
-            controller.enqueue(enc.encode("data: [DONE]\n\n"));
-            controller.close();
+            try {
+              controller.enqueue(
+                enc.encode(
+                  "data: " +
+                    JSON.stringify({
+                      response_id: detectedChatId,
+                      choices: [
+                        {
+                          delta: { content: state.text, phase: "answer" },
+                          finish_reason: "stop",
+                        },
+                      ],
+                    }) +
+                    "\n\n",
+                ),
+              );
+              controller.enqueue(enc.encode("data: [DONE]\n\n"));
+              controller.close();
+            } catch {}
           }
         } catch (err: any) {
-          isDone = true;
-          clearInterval(intervalId);
-          console.error(`[UIStream error]`, err?.message);
-          controller.error(err);
+          if (!isDone) {
+            isDone = true;
+            clearInterval(intervalId);
+            console.error(`[UIStream error]`, err?.message);
+            try { controller.error(err); } catch {}
+          }
+        } finally {
+          isProcessing = false;
         }
-      }, 80);
+      }, 100);
     },
   });
 
