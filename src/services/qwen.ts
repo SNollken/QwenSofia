@@ -1739,6 +1739,12 @@ export async function createQwenStream(
         modelId,
         timeoutMs: config.timeouts.chat,
         signal: options?.signal,
+        files: files?.map((f) => ({
+          name: f.name || f.file?.name || "image.png",
+          mimeType: f.type || f.file?.type || "image/png",
+          buffer: f.file?.buffer || f.buffer,
+          url: f.url,
+        })),
       });
 
       return {

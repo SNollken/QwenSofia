@@ -195,3 +195,29 @@ export function getCooldownStatus(): Record<
   }
   return result;
 }
+
+export function sweepExpiredCooldowns(): number {
+  let cleared = 0;
+  const now = Date.now();
+  for (const [id, entry] of cooldowns.entries()) {
+    if (entry.until <= now) {
+      clearAccountCooldown(id);
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
+export function resetStaleCooldowns(maxAgeMs = 30 * 60 * 1000): number {
+  let cleared = 0;
+  const now = Date.now();
+  for (const [id, entry] of cooldowns.entries()) {
+    const remaining = entry.until - now;
+    const elapsed = 24 * 60 * 60 * 1000 - remaining;
+    if (elapsed >= maxAgeMs) {
+      clearAccountCooldown(id);
+      cleared++;
+    }
+  }
+  return cleared;
+}

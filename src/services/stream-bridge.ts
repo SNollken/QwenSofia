@@ -511,6 +511,7 @@ export async function browserUiStreamFetch(
     modelId?: string;
     timeoutMs?: number;
     signal?: AbortSignal;
+    files?: Array<{ name: string; mimeType?: string; buffer?: Buffer; url?: string }>;
   } = {},
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
@@ -614,6 +615,28 @@ export async function browserUiStreamFetch(
   await page.waitForSelector("textarea", { timeout: 15000 });
   await page.focus("textarea");
 
+  if (options.files && options.files.length > 0) {
+    try {
+      console.log(`[UIStream 4.5] Attaching ${options.files.length} file(s)...`);
+      const fileInput = await page.$('input[type="file"]');
+      if (fileInput) {
+        const payloadFiles = options.files
+          .filter((f) => f.buffer && f.buffer.length > 0)
+          .map((f) => ({
+            name: f.name || "attachment.png",
+            mimeType: f.mimeType || "image/png",
+            buffer: f.buffer!,
+          }));
+        if (payloadFiles.length > 0) {
+          await fileInput.setInputFiles(payloadFiles);
+          await page.waitForTimeout(800);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[UIStream] Failed to attach files: ${err.message}`);
+    }
+  }
+
   console.log(`[UIStream 5] Inserting prompt...`);
   const initialResponses = await page.evaluate(
     () => document.querySelectorAll(".response-message-content").length,
@@ -649,6 +672,10 @@ export async function browserUiStreamFetch(
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
   let detectedChatId = options.chatSessionId || "ui-session";
+  const urlMatch = page.url().match(/\/c\/([a-f0-9-]+)/);
+  if (urlMatch) {
+    detectedChatId = urlMatch[1];
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

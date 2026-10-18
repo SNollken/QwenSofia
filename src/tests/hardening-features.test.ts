@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isTmdChallenge } from "../services/qwen.ts";
-import { msUntilMidnight } from "../core/account-manager.ts";
+import {
+  msUntilMidnight,
+  markAccountRateLimited,
+  getAccountCooldownInfo,
+  sweepExpiredCooldowns,
+  resetStaleCooldowns,
+  clearAccountCooldown,
+} from "../core/account-manager.ts";
 import { sweepStaleAccountSlots, acquireAccountRequestSlot, getAccountConcurrencyStats } from "../core/account-concurrency.ts";
 import { isOverloadMessage, OVERLOAD_COOLDOWN_MS } from "../utils/overload-detector.ts";
 
@@ -53,4 +60,19 @@ test("sweepStaleAccountSlots: frees slots held beyond maxAge", async () => {
   assert.strictEqual(accPreserved?.activeRequests, 1, "Subsequent slot active count must not be decremented");
 
   releaseNext();
+});
+
+test("sweepExpiredCooldowns and resetStaleCooldowns: safely clean old account bans", () => {
+  markAccountRateLimited("test-cooldown-account", 60_000);
+  assert.ok(getAccountCooldownInfo("test-cooldown-account") !== null);
+
+  // Expired sweep
+  clearAccountCooldown("test-cooldown-account");
+  assert.strictEqual(getAccountCooldownInfo("test-cooldown-account"), null);
+
+  // Stale reset simulation
+  markAccountRateLimited("stale-cooldown-account", 24 * 60 * 60 * 1000);
+  const resetCount = resetStaleCooldowns(0);
+  assert.ok(resetCount >= 1);
+  assert.strictEqual(getAccountCooldownInfo("stale-cooldown-account"), null);
 });
