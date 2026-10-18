@@ -624,6 +624,7 @@ export async function uploadFile(c: Context) {
  */
 export interface QwenFileEntry {
   type: string;
+  buffer?: Buffer;
   file: {
     created_at: number;
     data: Record<string, unknown>;
@@ -631,6 +632,7 @@ export interface QwenFileEntry {
     hash: string | null;
     id: string;
     user_id: string;
+    buffer?: Buffer;
     meta: { name: string; size: number; content_type: string };
     update_at: number;
     lastModified: number;
@@ -693,12 +695,14 @@ export async function processImagesForQwen(
       let filename = "";
       let fileSize = 0;
       let fileId = "";
+      let localBuffer: Buffer | undefined;
 
       if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
         try {
           const remoteMedia = await downloadRemoteMedia(mediaUrl);
           filename = remoteMedia.filename;
           fileSize = remoteMedia.buffer.length;
+          localBuffer = remoteMedia.buffer;
           const typeInfo = detectFileType(filename);
           const stsData = await getSTSToken(
             filename,
@@ -715,10 +719,10 @@ export async function processImagesForQwen(
             );
           }
           console.warn(
-            `[Upload] Failed to re-upload remote media, falling back to source URL: ${err.message}`,
+            `[Upload] Failed to re-upload remote media, falling back to source URL/buffer: ${err.message}`,
           );
           fileUrl = mediaUrl;
-          filename = getFilenameFromUrl(mediaUrl);
+          filename = filename || getFilenameFromUrl(mediaUrl);
           fileId = uuidv4();
         }
       } else if (mediaUrl.startsWith("data:")) {
@@ -736,27 +740,37 @@ export async function processImagesForQwen(
             detectFileType(`file.${detectedExt}`).mime,
           );
           const buffer = Buffer.from(base64Data, "base64");
+          localBuffer = buffer;
           filename = `${isVideoData ? "video" : isAudioData ? "audio" : "file"}_${Date.now()}.${detectedExt}`;
           fileSize = buffer.length;
           const typeInfo = detectFileType(filename);
-          const stsData = await getSTSToken(
-            filename,
-            fileSize,
-            typeInfo.qwenFileType,
-            headers,
-          );
-          fileUrl = await uploadToOSS(buffer, stsData, filename);
-          fileId = stsData.file_id;
+          try {
+            const stsData = await getSTSToken(
+              filename,
+              fileSize,
+              typeInfo.qwenFileType,
+              headers,
+            );
+            fileUrl = await uploadToOSS(buffer, stsData, filename);
+            fileId = stsData.file_id;
+          } catch (stsErr: any) {
+            console.warn(
+              `[Upload] STS upload skipped/failed (${stsErr.message}), preserving local buffer for UI stream`,
+            );
+            fileUrl = `data:${dataMime};base64,${base64Data}`;
+            fileId = uuidv4();
+          }
         } catch (err: any) {
-          console.error("❌ [Upload] Failed to upload media:", err.message);
+          console.error("❌ [Upload] Failed to decode media:", err.message);
           continue;
         }
       }
 
-      if (fileUrl) {
+      if (fileUrl || localBuffer) {
         const typeInfo = detectFileType(filename);
         files.push({
           type: typeInfo.showType,
+          buffer: localBuffer,
           file: {
             created_at: Date.now(),
             data: {},
@@ -764,6 +778,7 @@ export async function processImagesForQwen(
             hash: null,
             id: fileId,
             user_id: "proxy-user",
+            buffer: localBuffer,
             meta: {
               name: filename,
               size: fileSize,

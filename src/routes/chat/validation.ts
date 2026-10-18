@@ -138,15 +138,18 @@ async function buildPromptFromMessages(
       if (imageParts.length > 0) {
         try {
           if (!uploadHeaders) {
-            const { cookie, userAgent, bxV, bxUa, bxUmidtoken } =
-              await getBasicHeaders();
-            uploadHeaders = {
-              cookie,
-              "user-agent": userAgent,
-              "bx-ua": bxUa,
-              "bx-umidtoken": bxUmidtoken,
-              "bx-v": bxV,
-            };
+            const basic = await getBasicHeaders().catch(() => null);
+            if (basic) {
+              uploadHeaders = {
+                cookie: basic.cookie,
+                "user-agent": basic.userAgent,
+                "bx-ua": basic.bxUa,
+                "bx-umidtoken": basic.bxUmidtoken,
+                "bx-v": basic.bxV,
+              };
+            } else {
+              uploadHeaders = {};
+            }
           }
           const { text, files } = await processImagesForQwen(
             msg.content as any[],

@@ -612,7 +612,17 @@ export async function browserUiStreamFetch(
   if (options.files && options.files.length > 0) {
     try {
       console.log(`[UIStream 4.5] Attaching ${options.files.length} file(s)...`);
-      const fileInput = await page.$('input[type="file"]');
+      let fileInput = await page.$('input[type="file"]');
+      if (!fileInput) {
+        const uploadBtn = await page.$(
+          'button[aria-label*="upload" i], button[aria-label*="anexar" i], button[aria-label*="file" i], .chat-input-upload, [class*="upload"] button',
+        );
+        if (uploadBtn) {
+          await uploadBtn.click().catch(() => {});
+          await page.waitForTimeout(300);
+          fileInput = await page.$('input[type="file"]');
+        }
+      }
       if (fileInput) {
         const payloadFiles = options.files
           .filter((f) => f.buffer && f.buffer.length > 0)
@@ -623,8 +633,13 @@ export async function browserUiStreamFetch(
           }));
         if (payloadFiles.length > 0) {
           await fileInput.setInputFiles(payloadFiles);
-          await page.waitForTimeout(800);
+          console.log(
+            `[UIStream 4.5] Attached ${payloadFiles.length} file(s) to DOM`,
+          );
+          await page.waitForTimeout(1200);
         }
+      } else {
+        console.warn(`[UIStream 4.5] input[type="file"] not found in DOM`);
       }
     } catch (err: any) {
       console.warn(`[UIStream] Failed to attach files: ${err.message}`);
