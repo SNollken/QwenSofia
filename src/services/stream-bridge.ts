@@ -743,72 +743,52 @@ export async function browserUiStreamFetch(
           const state = await page.evaluate(
             ({ initialResponses }) => {
               const els = document.querySelectorAll(
-                ".response-message-content, [class*='response-message-content'], [data-message-author-role='assistant']",
+                ".response-message-content, [class*='response-message-content']",
               );
-              if (els.length <= initialResponses) {
-                if (els.length > 0) {
-                  const lastEl = els[els.length - 1];
-                  const hasTxt = (lastEl.textContent || "").trim().length > 0;
-                  const stopBtn = document.querySelector(
-                    ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
-                  );
-                  if (hasTxt || stopBtn) {
-                    const thoughtEl = lastEl.querySelector(
-                      ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
-                    );
-                    const thoughtText = thoughtEl ? thoughtEl.textContent || "" : "";
-                    let text = "";
-                    if (thoughtEl) {
-                      const clone = lastEl.cloneNode(true) as HTMLElement;
-                      const clonedThought = clone.querySelector(
-                        ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
-                      );
-                      clonedThought?.remove();
-                      text = clone.textContent || "";
-                    } else {
-                      text = lastEl.textContent || "";
-                    }
-                    return { text, thoughtText, isGenerating: !!stopBtn };
-                  }
-                }
-                const stopBtn = document.querySelector(
-                  ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
-                );
-                if (stopBtn) {
-                  const thoughtEl = document.querySelector(
-                    ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details, [class*='think']",
-                  );
-                  const thoughtText = thoughtEl
-                    ? thoughtEl.textContent || ""
-                    : "";
-                  return { text: "", thoughtText, isGenerating: true };
-                }
-                return null;
-              }
-              const last = els[els.length - 1];
-
-              // Procura bloco de pensamento / raciocínio dedicado
-              const thoughtEl = last.querySelector(
-                ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
-              );
-              const thoughtText = thoughtEl ? thoughtEl.textContent || "" : "";
-              let text = "";
-              if (last) {
-                if (thoughtEl) {
-                  const clone = last.cloneNode(true) as HTMLElement;
-                  const clonedThought = clone.querySelector(
-                    ".thought-content, .reasoning-content, [class*='thinking' i], [class*='thought' i], details.think-block",
-                  );
-                  clonedThought?.remove();
-                  text = clone.textContent || "";
-                } else {
-                  text = last.textContent || "";
-                }
-              }
               const stopBtn = document.querySelector(
                 ".stop-generating-button, [aria-label*='stop' i], .stop-button, [aria-label*='parar' i]",
               );
-              return { text, thoughtText, isGenerating: !!stopBtn };
+              const isGenerating = !!stopBtn;
+
+              if (els.length <= initialResponses) {
+                return {
+                  text: "",
+                  thoughtText: "",
+                  isGenerating: true,
+                  hasNewMessage: false,
+                };
+              }
+
+              const last = els[els.length - 1];
+              if (!last) {
+                return {
+                  text: "",
+                  thoughtText: "",
+                  isGenerating,
+                  hasNewMessage: false,
+                };
+              }
+
+              const thoughtEl = last.querySelector(
+                ".thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
+              );
+              const thoughtText = thoughtEl
+                ? (thoughtEl.textContent || "").trim()
+                : "";
+
+              let text = "";
+              if (thoughtEl) {
+                const clone = last.cloneNode(true) as HTMLElement;
+                const clonedThought = clone.querySelector(
+                  ".thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
+                );
+                clonedThought?.remove();
+                text = (clone.textContent || "").trim();
+              } else {
+                text = (last.textContent || "").trim();
+              }
+
+              return { text, thoughtText, isGenerating, hasNewMessage: true };
             },
             { initialResponses },
           );
@@ -888,7 +868,12 @@ export async function browserUiStreamFetch(
             try { controller.enqueue(enc.encode(chunk)); } catch {}
           }
 
-          if (state && (lastLength > 0 || lastThoughtLength > 0) && !state.isGenerating) {
+          if (
+            state &&
+            state.hasNewMessage &&
+            lastLength > 0 &&
+            !state.isGenerating
+          ) {
             isDone = true;
             clearInterval(intervalId);
             console.log(
