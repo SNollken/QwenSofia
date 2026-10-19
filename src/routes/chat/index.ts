@@ -54,24 +54,7 @@ async function reducePromptForRetry(
   model: string,
 ): Promise<string | null> {
   try {
-    if (messages.length > 2) {
-      const result = await summarizeLargePayload(messages, model);
-      if (result) {
-        const keepCount = Math.min(2, messages.length);
-        const recentMessages = messages.slice(messages.length - keepCount);
-        const prompt = rebuildPromptWithSummary(
-          systemPrompt,
-          recentMessages,
-          result.summary,
-        );
-        console.log(
-          `📝 [Chat] Reduced prompt via summarization: ${result.originalChars} → ${result.summaryChars} chars`,
-        );
-        return capPromptForUpstream(prompt);
-      }
-    }
-
-    // Fallback: truncate individual messages
+    // Truncate messages locally without making upstream network calls
     const truncated = truncateMessages(messages);
     const truncatedText = truncated
       .map((msg: any) => {

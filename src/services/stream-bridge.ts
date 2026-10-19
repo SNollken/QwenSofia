@@ -543,7 +543,12 @@ export async function browserUiStreamFetch(
         timeout: 15000,
       })
       .catch(() => {});
-  } else if (options.chatSessionId) {
+  } else if (
+    options.chatSessionId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      options.chatSessionId,
+    )
+  ) {
     if (!page.url().includes(`/c/${options.chatSessionId}`)) {
       console.log(
         `[UIStream 2] Navigating to existing chat /c/${options.chatSessionId}...`,
@@ -701,10 +706,16 @@ export async function browserUiStreamFetch(
   }
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
-  let detectedChatId = options.chatSessionId || "ui-session";
-  const urlMatch = page.url().match(/\/c\/([a-f0-9-]+)/);
-  if (urlMatch) {
-    detectedChatId = urlMatch[1];
+  let detectedChatId =
+    options.chatSessionId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      options.chatSessionId,
+    )
+      ? options.chatSessionId
+      : "";
+  const initialUrlMatch = page.url().match(/\/c\/([a-f0-9-]{36})/i);
+  if (initialUrlMatch) {
+    detectedChatId = initialUrlMatch[1];
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -805,6 +816,11 @@ export async function browserUiStreamFetch(
           if (isDone) return;
 
           if (ticks % 25 === 0) {
+            const currentUrlMatch = page.url().match(/\/c\/([a-f0-9-]{36})/i);
+            if (currentUrlMatch) {
+              detectedChatId = currentUrlMatch[1];
+            }
+
             const domDebug = await page
               .evaluate(() => {
                 const ta = document.querySelector("textarea");

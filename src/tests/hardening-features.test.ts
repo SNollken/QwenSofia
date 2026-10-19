@@ -76,3 +76,11 @@ test("sweepExpiredCooldowns and resetStaleCooldowns: safely clean old account ba
   assert.ok(resetCount >= 1);
   assert.strictEqual(getAccountCooldownInfo("stale-cooldown-account"), null);
 });
+
+test("parseQwenErrorPayload: handles SSE comments and heartbeats gracefully", async () => {
+  const { parseQwenErrorPayload } = await import("../routes/chat/errors.ts");
+  assert.strictEqual(parseQwenErrorPayload(": heartbeat"), null);
+  assert.strictEqual(parseQwenErrorPayload(": ping\n\n"), null);
+  assert.strictEqual(parseQwenErrorPayload("data: {\"test\":1}"), null);
+  assert.ok(parseQwenErrorPayload("unexpected html body") !== null);
+});

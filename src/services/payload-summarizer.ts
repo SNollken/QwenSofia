@@ -431,6 +431,14 @@ export async function summarizeLargePayload(
     chunks.push(oldMessages.slice(i, i + CHUNK_SIZE));
   }
 
+  // Safety cap: never split into more than 2 chunks to prevent DOS and WAF cascades
+  if (chunks.length > 2) {
+    logger.warn(
+      `[Summarizer] Payload too fragmented (${chunks.length} chunks); skipping remote summarization to prevent TMD/lock starvation`,
+    );
+    return null;
+  }
+
   // Find available accounts for parallel summarization
   const accounts = loadAccounts();
   const availableAccountIds = accounts

@@ -12,7 +12,13 @@ export function parseQwenErrorPayload(
   raw: string,
 ): { message: string; status: number } | null {
   const text = raw.trim();
-  if (!text || text.startsWith("data: ")) return null;
+  if (
+    !text ||
+    text.startsWith("data:") ||
+    text.startsWith(":") ||
+    text.startsWith("event:")
+  )
+    return null;
 
   try {
     const payload = JSON.parse(text);

@@ -278,8 +278,11 @@ export function updateLogicalThreadState(
 ): void {
   if (
     !logicalSessionId ||
-    entry.chatSessionId === undefined ||
-    entry.chatSessionId === null
+    !entry.chatSessionId ||
+    entry.chatSessionId === "ui-session" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      entry.chatSessionId,
+    )
   )
     return;
   if (logicalThreadStates.size > 10000) cleanupStaleSessions();
