@@ -644,24 +644,32 @@ export async function browserUiStreamFetch(
     }
   }
 
-  console.log(`[UIStream 5] Inserting prompt...`);
+  console.log(`[UIStream 5] Inserting prompt (${prompt.length} chars)...`);
   const initialResponses = await page.evaluate(
     () => document.querySelectorAll(".response-message-content").length,
   );
 
   await page.focus("textarea", { timeout: 3000 }).catch(() => {});
-  await page.evaluate((text) => {
-    const ta = document.querySelector("textarea");
-    if (ta) {
-      ta.focus();
-      ta.value = text;
+  try {
+    await page.fill("textarea", prompt, { timeout: 8000 });
+  } catch {
+    await page.evaluate((text) => {
+      const ta = document.querySelector("textarea");
+      if (!ta) return;
+      const tracker = (ta as any)._valueTracker;
+      if (tracker) tracker.setValue("");
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      if (setter) setter.call(ta, text);
+      else ta.value = text;
       ta.dispatchEvent(new Event("input", { bubbles: true }));
       ta.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    document.execCommand("insertText", false, text);
-  }, prompt);
+    }, prompt);
+  }
 
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
 
   console.log(`[UIStream 6] Clicking send button...`);
   const sendBtn = await page
@@ -754,7 +762,7 @@ export async function browserUiStreamFetch(
                 return {
                   text: "",
                   thoughtText: "",
-                  isGenerating: true,
+                  isGenerating,
                   hasNewMessage: false,
                 };
               }
@@ -795,6 +803,23 @@ export async function browserUiStreamFetch(
 
           if (isDone) return;
 
+          // Fail fast if submission never started generation within 15 seconds
+          if (ticks > 150 && !state?.hasNewMessage && !state?.isGenerating) {
+            console.warn(
+              `[UIStream] No generation started within 15s (ticks=${ticks}), failing fast for failover`,
+            );
+            isDone = true;
+            clearInterval(intervalId);
+            try {
+              controller.error(
+                new Error(
+                  "UI Stream prompt submission failed to start generation within 15s",
+                ),
+              );
+            } catch {}
+            return;
+          }
+
           if (ticks % 25 === 0) {
             const currentUrlMatch = page.url().match(/\/c\/([a-f0-9-]{36})/i);
             if (currentUrlMatch) {
@@ -829,7 +854,7 @@ export async function browserUiStreamFetch(
             );
           }
 
-          if (ticks % 10 === 0) {
+          if (ticks % 10 === 0 && (state?.isGenerating || state?.hasNewMessage)) {
             try {
               controller.enqueue(enc.encode(": heartbeat\n\n"));
             } catch {}
