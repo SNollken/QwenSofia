@@ -266,7 +266,10 @@ export const config = {
     maxDelayMs: parseInt(env.RETRY_MAX_DELAY_MS),
   },
   accountRequests: {
-    maxConcurrent: readSavedAccountConcurrency() ?? env.ACCOUNT_MAX_CONCURRENT_REQUESTS,
+    maxConcurrent: Math.min(
+      1,
+      readSavedAccountConcurrency() ?? env.ACCOUNT_MAX_CONCURRENT_REQUESTS,
+    ),
     queueTimeoutMs: env.ACCOUNT_REQUEST_QUEUE_TIMEOUT_MS,
   },
   antiBot: {
@@ -304,9 +307,10 @@ export function setAccountMaxConcurrent(maxConcurrent: number): number {
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 100) {
     throw new Error("A concorrência deve ser um número inteiro entre 1 e 100");
   }
-  saveAccountConcurrency(maxConcurrent);
-  config.accountRequests.maxConcurrent = maxConcurrent;
-  return maxConcurrent;
+  const bounded = Math.min(1, maxConcurrent);
+  saveAccountConcurrency(bounded);
+  config.accountRequests.maxConcurrent = bounded;
+  return bounded;
 }
 
 export type Config = typeof config;

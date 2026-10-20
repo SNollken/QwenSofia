@@ -145,7 +145,7 @@ export function selectWarmAccount<T extends { id: string }>(
   );
 
   let selected: T | undefined;
-  let lowestLoad = config.accountRequests.maxConcurrent;
+  let lowestLoad = Math.min(1, config.accountRequests.maxConcurrent);
   for (let offset = 0; offset < accounts.length; offset++) {
     const candidate = accounts[(startIndex + offset) % accounts.length];
     const load = getAccountRequestCount(candidate.id);
@@ -195,6 +195,17 @@ function resolveInitialAccount(preferredAccountId?: string): {
     );
     if (warmAccount) {
       return { account: warmAccount, configuredAccounts };
+    }
+
+    // Try finding any account that is not currently busy
+    const idleAccount = configuredAccounts.find(
+      (a) =>
+        !getAccountCooldownInfo(a.id) &&
+        getAccountRequestCount(a.id) === 0 &&
+        !busyAccountIds.has(a.id),
+    );
+    if (idleAccount) {
+      return { account: idleAccount, configuredAccounts };
     }
 
     if (!account) {

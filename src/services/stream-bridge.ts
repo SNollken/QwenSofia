@@ -2,7 +2,19 @@ import type { Page } from "playwright";
 import crypto from "crypto";
 import { config } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
+import { Mutex } from "../core/mutex.ts";
 import { isAccessVerificationVisible } from "./aliyun-captcha-solver.ts";
+
+const pageMutexes = new WeakMap<Page, Mutex>();
+
+function getPageMutex(page: Page): Mutex {
+  let m = pageMutexes.get(page);
+  if (!m) {
+    m = new Mutex();
+    pageMutexes.set(page, m);
+  }
+  return m;
+}
 
 const streamCallbacks = new Map<
   string,
@@ -522,16 +534,31 @@ export async function browserUiStreamFetch(
 }> {
   console.log(`[UIStream 1] Starting browserUiStreamFetch. Current URL: ${page.url()}`);
   options.signal?.throwIfAborted();
+  const pageMutex = getPageMutex(page);
+  const releaseLock = await pageMutex.acquire(
+    options.timeoutMs || 120000,
+    options.signal,
+  );
+  let lockReleased = false;
+  const safeReleaseLock = () => {
+    if (!lockReleased) {
+      lockReleased = true;
+      releaseLock();
+    }
+  };
+  options.signal?.addEventListener("abort", safeReleaseLock, { once: true });
+
   const enc = new TextEncoder();
   const startTime = Date.now();
   const maxTimeoutMs = options.timeoutMs || 120000;
 
-  // Ciclo de vida do DOM: se a aba acumular muitas mensagens (> 15), recicla para /c/new-chat
-  const currentMsgCount = await page
-    .evaluate(
-      () => document.querySelectorAll(".response-message-content").length,
-    )
-    .catch(() => 0);
+  try {
+    // Ciclo de vida do DOM: se a aba acumular muitas mensagens (> 15), recicla para /c/new-chat
+    const currentMsgCount = await page
+      .evaluate(
+        () => document.querySelectorAll(".response-message-content").length,
+      )
+      .catch(() => 0);
 
   if (currentMsgCount > 15 && !options.chatSessionId) {
     console.log(
@@ -726,15 +753,17 @@ export async function browserUiStreamFetch(
     detectedChatId = initialUrlMatch[1];
   }
 
+  let isDone = false;
+  let intervalId: NodeJS.Timeout | undefined;
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let isDone = false;
       let isProcessing = false;
       let lastLength = 0;
       let lastThoughtLength = 0;
       let ticks = 0;
 
-      const intervalId = setInterval(async () => {
+      intervalId = setInterval(async () => {
         if (isDone || isProcessing) return;
         isProcessing = true;
         try {
@@ -742,8 +771,9 @@ export async function browserUiStreamFetch(
           if (options.signal?.aborted || Date.now() - startTime > maxTimeoutMs) {
             if (!isDone) {
               isDone = true;
-              clearInterval(intervalId);
+              if (intervalId) clearInterval(intervalId);
               try { controller.close(); } catch {}
+              safeReleaseLock();
             }
             return;
           }
@@ -818,6 +848,7 @@ export async function browserUiStreamFetch(
                 ),
               );
             } catch {}
+            safeReleaseLock();
             return;
           }
 
@@ -924,6 +955,7 @@ export async function browserUiStreamFetch(
               controller.enqueue(enc.encode("data: [DONE]\n\n"));
               controller.close();
             } catch {}
+            safeReleaseLock();
           }
         } catch (err: any) {
           if (!isDone) {
@@ -931,11 +963,19 @@ export async function browserUiStreamFetch(
             clearInterval(intervalId);
             console.error(`[UIStream error]`, err?.message);
             try { controller.error(err); } catch {}
+            safeReleaseLock();
           }
         } finally {
           isProcessing = false;
         }
       }, 100);
+    },
+    cancel() {
+      if (!isDone) {
+        isDone = true;
+        clearInterval(intervalId);
+      }
+      safeReleaseLock();
     },
   });
 
@@ -947,4 +987,8 @@ export async function browserUiStreamFetch(
     status: 200,
     contentType: "text/event-stream",
   };
+  } catch (err) {
+    safeReleaseLock();
+    throw err;
+  }
 }
