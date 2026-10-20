@@ -44,6 +44,7 @@ import {
   summarizeLargePayload,
   rebuildPromptWithSummary,
   truncateMessages,
+  buildBoundedPrompt,
   capPromptForUpstream,
   UPSTREAM_PROMPT_CHAR_LIMIT,
 } from "../../services/payload-summarizer.ts";
@@ -54,28 +55,7 @@ async function reducePromptForRetry(
   model: string,
 ): Promise<string | null> {
   try {
-    // Truncate messages locally without making upstream network calls
-    const truncated = truncateMessages(messages);
-    const truncatedText = truncated
-      .map((msg: any) => {
-        const content =
-          typeof msg.content === "string"
-            ? msg.content
-            : Array.isArray(msg.content)
-              ? msg.content
-                  .map((p: any) => p.text || JSON.stringify(p))
-                  .join("\n")
-              : JSON.stringify(msg.content);
-        return `${msg.role}: ${content}`;
-      })
-      .join("\n\n");
-    const prompt = systemPrompt
-      ? `${systemPrompt}\n\n${truncatedText}`
-      : truncatedText;
-    console.warn(
-      `⚠️  [Chat] Reduced prompt via truncation: ${messages.length} messages → ${prompt.length} chars`,
-    );
-    return capPromptForUpstream(prompt);
+    return buildBoundedPrompt(messages, systemPrompt);
   } catch (err) {
     console.warn(
       `❌ [Chat] Failed to reduce prompt: ${(err as Error).message}`,

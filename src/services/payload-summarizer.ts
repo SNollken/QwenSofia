@@ -194,11 +194,107 @@ export function truncateMessages(
   ];
 }
 
+export function buildBoundedPrompt(
+  messages: Array<{ role: string; content: any }>,
+  systemPrompt: string,
+  maxChars = UPSTREAM_PROMPT_CHAR_LIMIT,
+): string {
+  let effectiveSystemPrompt = systemPrompt || "";
+
+  // If systemPrompt by itself exceeds 70% of maxChars,
+  // protect the tool instructions section while compacting only the persona.
+  const maxSystemChars = Math.floor(maxChars * 0.7);
+  if (effectiveSystemPrompt.length > maxSystemChars) {
+    const toolMarker = "\n\n# TOOLS AVAILABLE";
+    const toolIdx = effectiveSystemPrompt.indexOf(toolMarker);
+    if (toolIdx !== -1) {
+      const toolPart = effectiveSystemPrompt.substring(toolIdx);
+      const personaPart = effectiveSystemPrompt.substring(0, toolIdx);
+      const personaBudget = Math.max(5_000, maxSystemChars - toolPart.length);
+      effectiveSystemPrompt = `${capPromptForUpstream(personaPart, personaBudget)}${toolPart}`;
+    } else {
+      effectiveSystemPrompt = capPromptForUpstream(
+        effectiveSystemPrompt,
+        maxSystemChars,
+      );
+    }
+  }
+
+  // Allocate remaining budget to conversation history
+  const messageBudget = Math.max(
+    5_000,
+    maxChars - effectiveSystemPrompt.length - 200,
+  );
+
+  // Take messages from newest to oldest
+  const includedMessages: string[] = [];
+  let currentChars = 0;
+  let omittedCount = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    let content =
+      typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content
+              .map((p: any) => p.text || JSON.stringify(p))
+              .join("\n")
+          : JSON.stringify(msg.content);
+
+    if (content.length > MAX_SINGLE_MESSAGE_CHARS) {
+      content = truncateMessageContent(content);
+    }
+
+    const formatted = `${msg.role}: ${content}`;
+    const nextChars = currentChars + formatted.length + 2;
+
+    if (nextChars > messageBudget && includedMessages.length > 0) {
+      omittedCount = i + 1;
+      break;
+    }
+
+    includedMessages.unshift(formatted);
+    currentChars = nextChars;
+  }
+
+  if (omittedCount > 0) {
+    includedMessages.unshift(
+      `[... ${omittedCount} older conversation turn(s) omitted to fit context window ...]`,
+    );
+  }
+
+  const conversationText = includedMessages.join("\n\n");
+  const result = effectiveSystemPrompt
+    ? `${effectiveSystemPrompt}\n\n${conversationText}`
+    : conversationText;
+
+  console.warn(
+    `⚠️  [Chat] Bounded prompt: ${messages.length} messages (${omittedCount} omitted) → ${result.length} chars (system: ${effectiveSystemPrompt.length} chars)`,
+  );
+
+  return result;
+}
+
 export function capPromptForUpstream(
   prompt: string,
   maxChars = UPSTREAM_PROMPT_CHAR_LIMIT,
 ): string {
   if (prompt.length <= maxChars) return prompt;
+
+  // Protect tool instructions if present
+  const toolMarker = "\n\n# TOOLS AVAILABLE";
+  const toolIdx = prompt.indexOf(toolMarker);
+  if (toolIdx !== -1) {
+    const toolPart = prompt.substring(toolIdx);
+    if (toolPart.length < maxChars) {
+      const budget =
+        maxChars - toolPart.length - LOCAL_COMPACTION_MARKER.length - 100;
+      const head = prompt.substring(0, Math.floor(budget * 0.4));
+      const tail = prompt.substring(prompt.length - Math.floor(budget * 0.6));
+      return `${head}${LOCAL_COMPACTION_MARKER}${tail}\n\n${toolPart}`;
+    }
+  }
 
   const contentBudget = Math.max(0, maxChars - LOCAL_COMPACTION_MARKER.length);
   const headChars = Math.floor(contentBudget * 0.35);

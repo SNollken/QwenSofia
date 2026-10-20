@@ -1079,3 +1079,40 @@ test("StreamingToolParser: regression - standard JSON tool_call format still wor
   assert.deepStrictEqual(calls[0].arguments, { command: "ls -la" });
   assert.strictEqual(result.text + tail.text, "");
 });
+
+test("StreamingToolParser: intercepts raw JSON command tool calls without leaking text", () => {
+  const parser = new StreamingToolParser(TOOLS);
+  const rawLeak =
+    'Vou fazer uma auditoria completa do pipeline de streaming para identificar problemas remanescentes.json{"command": "read_file", "path": "C:/Coding/sweetly/frontend/src/components/channel/ScreenSharePiP.tsx"}json{"command": "read_file", "path": "C:/Coding/sweetly/frontend/src/features/broadcast/use-broadcast.ts"}jsonjsonjson';
+
+  const first = parser.feed(rawLeak);
+  const tail = parser.flush();
+  const calls = [...first.toolCalls, ...tail.toolCalls];
+
+  assert.strictEqual(calls.length, 2);
+  assert.strictEqual(calls[0].name, "read_file");
+  assert.deepStrictEqual(calls[0].arguments, {
+    path: "C:/Coding/sweetly/frontend/src/components/channel/ScreenSharePiP.tsx",
+  });
+  assert.strictEqual(calls[1].name, "read_file");
+  assert.deepStrictEqual(calls[1].arguments, {
+    path: "C:/Coding/sweetly/frontend/src/features/broadcast/use-broadcast.ts",
+  });
+  // No raw text or trailing json headers leaked!
+  assert.strictEqual((first.text + tail.text).trim(), "");
+});
+
+test("StreamingToolParser: parses fenced markdown json command blocks", () => {
+  const parser = new StreamingToolParser(TOOLS);
+  const fenced =
+    'Vou ler o arquivo solicitado:\n```json\n{"command": "read_file", "path": "test.txt"}\n```\n';
+
+  const first = parser.feed(fenced);
+  const tail = parser.flush();
+  const calls = [...first.toolCalls, ...tail.toolCalls];
+
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].name, "read_file");
+  assert.deepStrictEqual(calls[0].arguments, { path: "test.txt" });
+  assert.strictEqual((first.text + tail.text).trim(), "");
+});

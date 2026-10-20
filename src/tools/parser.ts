@@ -1902,6 +1902,32 @@ export class StreamingToolParser {
             continue;
           }
 
+          const rawJsonRecovery = this.findRawJsonToolCall(this.buffer);
+          if (rawJsonRecovery) {
+            if (rawJsonRecovery.pending) {
+              if (rawJsonRecovery.textBefore) {
+                this.emitVisibleText(result, rawJsonRecovery.textBefore);
+                this.buffer = this.buffer.substring(
+                  rawJsonRecovery.textBefore.length,
+                );
+              }
+              break;
+            }
+
+            if (isToolcallDebugEnabled()) {
+              logger.debug("[parser] recovering raw JSON tool call", {
+                textBeforeLength: rawJsonRecovery.textBefore.length,
+                name: rawJsonRecovery.toolCall?.name,
+              });
+            }
+            this.holdLeadIn(rawJsonRecovery.textBefore);
+            this.buffer = this.buffer.substring(rawJsonRecovery.consumeLength);
+            if (rawJsonRecovery.toolCall) {
+              this.finalizeSuccessfulToolCall(rawJsonRecovery.toolCall, result);
+            }
+            continue;
+          }
+
           // No full open tag found. Check for partial missing-open or open tag at end.
           const partialMissingOpenIdx = findPartialMissingOpenToolCallIndex(
             this.buffer,
@@ -2110,7 +2136,20 @@ export class StreamingToolParser {
           this.buffer.substring(partialOpenIndex).trim().toLowerCase() ===
           "<tool_call";
       } else {
-        this.emitVisibleText(result, this.buffer);
+        // Before emitting remaining buffer as text, check for raw JSON tool calls
+        let rawJsonRecovery = this.findRawJsonToolCall(this.buffer, true);
+        while (rawJsonRecovery && rawJsonRecovery.toolCall) {
+          this.holdLeadIn(rawJsonRecovery.textBefore);
+          this.buffer = this.buffer.substring(rawJsonRecovery.consumeLength);
+          this.finalizeSuccessfulToolCall(rawJsonRecovery.toolCall, result);
+          rawJsonRecovery = this.findRawJsonToolCall(this.buffer, true);
+        }
+
+        // Clean up any trailing empty "json" tokens left from stripped codeblock headers
+        this.buffer = this.buffer.replace(/^(?:json\s*)+/i, "");
+        if (this.buffer.length > 0) {
+          this.emitVisibleText(result, this.buffer);
+        }
       }
     }
 
@@ -2816,11 +2855,124 @@ export class StreamingToolParser {
     return null;
   }
 
+  private findRawJsonToolCall(
+    buffer: string,
+    isFlush = false,
+  ): {
+    textBefore: string;
+    consumeLength: number;
+    toolCall?: ParsedToolCall;
+    pending?: boolean;
+  } | null {
+    if (this.declaredToolNameSet.size === 0) return null;
+
+    const regex =
+      /(?:```(?:json)?\s*)?(?:json\s*)?\{\s*"(?:command|name|function|tool_name|tool)"\s*:\s*(?:"([^"]+)"|\{\s*"name"\s*:\s*"([^"]+)")/i;
+    const match = buffer.match(regex);
+    if (!match || match.index === undefined) return null;
+
+    const matchedToolName = match[1] || match[2];
+    const resolvedName = this.resolveDeclaredToolName(matchedToolName);
+    if (!resolvedName) {
+      return null;
+    }
+
+    const matchStart = match.index;
+    const textBefore = buffer.substring(0, matchStart);
+
+    const braceStart = buffer.indexOf("{", matchStart);
+    if (braceStart === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let braceEnd = -1;
+
+    for (let i = braceStart; i < buffer.length; i++) {
+      const c = buffer[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) {
+            braceEnd = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (braceEnd === -1) {
+      if (isFlush) {
+        const candidate =
+          buffer.substring(braceStart) + "}".repeat(Math.max(1, depth));
+        const parsed = parseJsonishString(candidate);
+        if (parsed && typeof parsed === "object") {
+          const toolCall = this.parseToolCall(parsed);
+          if (toolCall) {
+            return {
+              textBefore,
+              consumeLength: buffer.length,
+              toolCall,
+            };
+          }
+        }
+      }
+      return {
+        textBefore,
+        consumeLength: 0,
+        pending: true,
+      };
+    }
+
+    const jsonStr = buffer.substring(braceStart, braceEnd + 1);
+    const parsed = parseJsonishString(jsonStr);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const toolCall = this.parseToolCall(parsed);
+    if (!toolCall) return null;
+
+    let consumeEnd = braceEnd + 1;
+    const remaining = buffer.substring(consumeEnd);
+    const codeCloseMatch = remaining.match(/^[ 	]*(?:```|`{3,})\s*/);
+    if (codeCloseMatch) {
+      consumeEnd += codeCloseMatch[0].length;
+    }
+    const trailingJsonMatch = buffer
+      .substring(consumeEnd)
+      .match(/^(?:json\s*)+/i);
+    if (trailingJsonMatch) {
+      consumeEnd += trailingJsonMatch[0].length;
+    }
+
+    return {
+      textBefore,
+      consumeLength: consumeEnd,
+      toolCall,
+    };
+  }
+
   private parseToolCall(parsed: any): ParsedToolCall | null {
     if (!parsed || typeof parsed !== "object") return null;
 
     const name =
-      parsed.name || parsed.function?.name || parsed.tool_name || parsed.tool;
+      parsed.name ||
+      parsed.function?.name ||
+      parsed.tool_name ||
+      parsed.tool ||
+      parsed.command;
     if (!name || typeof name !== "string" || name.length === 0) return null;
 
     let args =
@@ -2828,8 +2980,17 @@ export class StreamingToolParser {
       parsed.function?.arguments ||
       parsed.args ||
       parsed.parameters ||
-      parsed.input ||
-      {};
+      parsed.input;
+
+    if (args === undefined || args === null) {
+      if (parsed.command) {
+        const { command, ...rest } = parsed;
+        args = rest;
+      } else {
+        args = {};
+      }
+    }
+
     if (typeof args === "string") {
       args = parseJsonishString(args) ?? {};
     }

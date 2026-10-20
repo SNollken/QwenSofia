@@ -4,6 +4,7 @@ import {
   capPromptForUpstream,
   rebuildPromptWithSummary,
   truncateMessages,
+  buildBoundedPrompt,
   UPSTREAM_PROMPT_CHAR_LIMIT,
   withSummarizationTimeout,
 } from "../services/payload-summarizer.ts";
@@ -98,5 +99,48 @@ test("payload-summarizer: bounds a stalled summarization chunk", async () => {
   await assert.rejects(
     withSummarizationTimeout(stalled, 10),
     /Summarization chunk timed out after 10ms/,
+  );
+});
+
+test("payload-summarizer: buildBoundedPrompt preserves tool instructions and schemas with huge message history", () => {
+  const systemPrompt =
+    "HERMES PERSONA RULES ".repeat(2000) +
+    "\n\n# TOOLS AVAILABLE\n" +
+    JSON.stringify([{ name: "read_file" }]) +
+    "\n\n# TOOL CALLING FORMAT (MANDATORY)\n" +
+    "<tool_call>\n" +
+    '{"name": "read_file", "arguments": {"path": "foo"}}\n' +
+    "</tool_call>";
+
+  const messages: Array<{ role: string; content: string }> = [];
+  for (let i = 0; i < 500; i++) {
+    messages.push({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Message ${i}: Some chat turn text. `.repeat(10),
+    });
+  }
+  messages.push({
+    role: "user",
+    content: "veja se tem mais algum problema?",
+  });
+
+  const bounded = buildBoundedPrompt(messages, systemPrompt);
+
+  assert.ok(bounded.length <= UPSTREAM_PROMPT_CHAR_LIMIT);
+  assert.ok(
+    bounded.includes("# TOOLS AVAILABLE"),
+    "Must preserve # TOOLS AVAILABLE",
+  );
+  assert.ok(
+    bounded.includes("# TOOL CALLING FORMAT"),
+    "Must preserve # TOOL CALLING FORMAT",
+  );
+  assert.ok(
+    bounded.includes("veja se tem mais algum problema?"),
+    "Must include latest user message",
+  );
+  assert.ok(
+    bounded.includes("older conversation turn(s) omitted"),
+    "Must include omission marker",
   );
 });

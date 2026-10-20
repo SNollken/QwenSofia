@@ -784,17 +784,18 @@ export async function browserUiStreamFetch(
                 ? (thoughtEl.textContent || "").trim()
                 : "";
 
-              let text = "";
-              if (thoughtEl) {
-                const clone = last.cloneNode(true) as HTMLElement;
-                const clonedThought = clone.querySelector(
+              const clone = last.cloneNode(true) as HTMLElement;
+              clone
+                .querySelectorAll(
                   ".thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
-                );
-                clonedThought?.remove();
-                text = (clone.textContent || "").trim();
-              } else {
-                text = (last.textContent || "").trim();
-              }
+                )
+                .forEach((el) => el.remove());
+              clone
+                .querySelectorAll(
+                  "button, .code-block-header, [class*='code-header'], [class*='code-block-header']",
+                )
+                .forEach((el) => el.remove());
+              const text = (clone.textContent || "").trim();
 
               return { text, thoughtText, isGenerating, hasNewMessage: true };
             },
