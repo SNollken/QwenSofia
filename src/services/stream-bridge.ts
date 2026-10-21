@@ -553,56 +553,73 @@ export async function browserUiStreamFetch(
   const maxTimeoutMs = options.timeoutMs || 120000;
 
   try {
-    // Ciclo de vida do DOM: se a aba acumular muitas mensagens (> 15), recicla para /c/new-chat
+    // Sempre garante que a aba comece em uma conversa limpa (/c/new-chat) sem mensagens residuais
     const currentMsgCount = await page
       .evaluate(
         () => document.querySelectorAll(".response-message-content").length,
       )
       .catch(() => 0);
 
-  if (currentMsgCount > 15 && !options.chatSessionId) {
-    console.log(
-      `[UIStream Lifecycle] Cycling DOM (msgs=${currentMsgCount}) -> /c/new-chat`,
-    );
-    await page
-      .goto("https://chat.qwen.ai/c/new-chat", {
-        waitUntil: "domcontentloaded",
-        timeout: 15000,
-      })
-      .catch(() => {});
-  } else if (
-    options.chatSessionId &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      options.chatSessionId,
-    )
-  ) {
-    if (!page.url().includes(`/c/${options.chatSessionId}`)) {
-      console.log(
-        `[UIStream 2] Navigating to existing chat /c/${options.chatSessionId}...`,
-      );
-      await page.goto(`https://chat.qwen.ai/c/${options.chatSessionId}`, {
-        waitUntil: "domcontentloaded",
-        timeout: 15000,
-      });
-    }
-  } else {
     const currentUrl = page.url();
-    const isAlreadyAtRootOrNew =
-      currentUrl === "https://chat.qwen.ai/" ||
-      currentUrl === "https://chat.qwen.ai" ||
-      currentUrl.includes("/c/new-chat");
-    if (!isAlreadyAtRootOrNew) {
-      console.log(`[UIStream 2] Navigating to /c/new-chat...`);
-      await page.goto("https://chat.qwen.ai/c/new-chat", {
-        waitUntil: "domcontentloaded",
-        timeout: 15000,
-      });
-      await page
-        .waitForLoadState("networkidle", { timeout: 3500 })
-        .catch(() => {});
-      await page.waitForTimeout(500);
+    const needsReset =
+      currentMsgCount > 0 ||
+      (currentUrl.includes("/c/") && !currentUrl.includes("/c/new-chat"));
+
+    if (needsReset) {
+      console.log(
+        `[UIStream 2] Resetting DOM to clean state (msgs=${currentMsgCount}, url=${currentUrl})...`,
+      );
+      // Tenta clicar no botão .new-chat para reset instantâneo na SPA sem reload
+      const clickedNewChat = await page
+        .evaluate(() => {
+          const btn = document.querySelector(".new-chat, button.new-chat-btn");
+          if (btn) {
+            (btn as HTMLElement).click();
+            return true;
+          }
+          return false;
+        })
+        .catch(() => false);
+
+      if (clickedNewChat) {
+        await page.waitForTimeout(400);
+      }
+
+      // Se ainda tiver mensagens residuais ou a URL continuar em chat antigo, navega para /c/new-chat
+      const remainingMsgs = await page
+        .evaluate(
+          () => document.querySelectorAll(".response-message-content").length,
+        )
+        .catch(() => 0);
+
+      if (
+        remainingMsgs > 0 ||
+        (page.url().includes("/c/") && !page.url().includes("/c/new-chat"))
+      ) {
+        await page
+          .goto("https://chat.qwen.ai/c/new-chat", {
+            waitUntil: "domcontentloaded",
+            timeout: 15000,
+          })
+          .catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    } else {
+      const isAlreadyAtRootOrNew =
+        currentUrl === "https://chat.qwen.ai/" ||
+        currentUrl === "https://chat.qwen.ai" ||
+        currentUrl.includes("/c/new-chat");
+      if (!isAlreadyAtRootOrNew) {
+        console.log(`[UIStream 2] Navigating to /c/new-chat...`);
+        await page
+          .goto("https://chat.qwen.ai/c/new-chat", {
+            waitUntil: "domcontentloaded",
+            timeout: 15000,
+          })
+          .catch(() => {});
+        await page.waitForTimeout(500);
+      }
     }
-  }
 
   console.log(`[UIStream 3] Cleaning overlays and finding textarea...`);
   await page

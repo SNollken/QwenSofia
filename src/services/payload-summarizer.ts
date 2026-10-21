@@ -125,11 +125,14 @@ function buildToolMemory(messages: Array<any>): string {
   return lines.join("\n");
 }
 
-function truncateMessageContent(content: any): any {
+function truncateMessageContent(
+  content: any,
+  maxChars = MAX_SINGLE_MESSAGE_CHARS,
+): any {
   if (typeof content === "string") {
-    if (content.length <= MAX_SINGLE_MESSAGE_CHARS) return content;
-    const keepStart = Math.floor(MAX_SINGLE_MESSAGE_CHARS * 0.7);
-    const keepEnd = Math.floor(MAX_SINGLE_MESSAGE_CHARS * 0.25);
+    if (content.length <= maxChars) return content;
+    const keepStart = Math.floor(maxChars * 0.7);
+    const keepEnd = Math.floor(maxChars * 0.25);
     return (
       content.substring(0, keepStart) +
       `\n\n[... truncated ${content.length - keepStart - keepEnd} chars ...]\n\n` +
@@ -138,9 +141,9 @@ function truncateMessageContent(content: any): any {
   }
   if (Array.isArray(content)) {
     return content.map((part: any) => {
-      if (part.text && part.text.length > MAX_SINGLE_MESSAGE_CHARS) {
-        const keepStart = Math.floor(MAX_SINGLE_MESSAGE_CHARS * 0.7);
-        const keepEnd = Math.floor(MAX_SINGLE_MESSAGE_CHARS * 0.25);
+      if (part.text && part.text.length > maxChars) {
+        const keepStart = Math.floor(maxChars * 0.7);
+        const keepEnd = Math.floor(maxChars * 0.25);
         return {
           ...part,
           text:
@@ -265,8 +268,21 @@ export function buildBoundedPrompt(
               .join("\n")
           : JSON.stringify(msg.content);
 
-    if (content.length > MAX_SINGLE_MESSAGE_CHARS) {
-      content = truncateMessageContent(content);
+    // Tool outputs can be huge (file reads, compile logs).
+    // Bound recent tool messages to 12k chars, and older tool messages to 3k chars,
+    // so a single large file read doesn't crowd out the rest of the conversation!
+    const isTool = msg.role === "tool" || msg.role === "function";
+    const isRecentTurn = i >= messages.length - 4;
+    const maxCharsForMsg = isTool
+      ? isRecentTurn
+        ? 12_000
+        : 3_000
+      : isRecentTurn
+        ? MAX_SINGLE_MESSAGE_CHARS
+        : 6_000;
+
+    if (content.length > maxCharsForMsg) {
+      content = truncateMessageContent(content, maxCharsForMsg);
     }
 
     const formatted = `${msg.role}: ${content}`;

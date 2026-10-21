@@ -185,3 +185,46 @@ test("payload-summarizer: buildBoundedPrompt anchors first user request and late
     "Must note intermediate omission",
   );
 });
+
+test("payload-summarizer: buildBoundedPrompt compacts older tool outputs so kanban list and question fit together", () => {
+  const systemPrompt = "# TOOLS AVAILABLE\n[]\n\n# TOOL CALLING FORMAT\n<tool_call>";
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "user", content: "Pendencias a resolver sweetly" },
+    {
+      role: "tool",
+      content: JSON.stringify({
+        tasks: Array.from({ length: 26 }, (_, i) => ({
+          id: `t_${i}`,
+          title: `Task ${i} title`,
+        })),
+      }),
+    },
+    {
+      role: "assistant",
+      content: "Todas as 26 tarefas do Kanban estão concluídas.",
+    },
+    { role: "user", content: "Resumo da conclusão dessas 26 tarefas ?" },
+    {
+      role: "tool",
+      content: "HUGE_FILE_READ: " + "public class A { ... }\n".repeat(2000),
+    },
+    {
+      role: "assistant",
+      content: "Lendo o arquivo de configuracao...",
+    },
+    {
+      role: "tool",
+      content: "HUGE_LOG_OUTPUT: " + "Maven build step...\n".repeat(2000),
+    },
+  ];
+
+  const bounded = buildBoundedPrompt(messages, systemPrompt, 40_000);
+
+  assert.ok(bounded.includes("Task 0 title"), "Task 0 must be present");
+  assert.ok(bounded.includes("Task 25 title"), "Task 25 must be present");
+  assert.ok(
+    bounded.includes("Resumo da conclusão dessas 26 tarefas ?"),
+    "User question must be present",
+  );
+  assert.ok(bounded.length <= 40_000, "Bounded prompt must respect budget");
+});
