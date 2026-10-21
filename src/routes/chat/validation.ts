@@ -421,6 +421,51 @@ function getCurrentPromptStartIndex(messages: Message[]): number {
   return last;
 }
 
+function compactToolParameter(param: any): any {
+  if (!param || typeof param !== "object") return param;
+  const res: any = {};
+  if (param.type) res.type = param.type;
+  if (Array.isArray(param.required)) res.required = param.required;
+  if (param.properties && typeof param.properties === "object") {
+    res.properties = {};
+    for (const [k, v] of Object.entries(param.properties)) {
+      if (v && typeof v === "object") {
+        const prop: any = { type: (v as any).type };
+        if ((v as any).description) {
+          const desc = String((v as any).description).trim();
+          prop.description =
+            desc.length > 80 ? desc.substring(0, 80).trim() + "..." : desc;
+        }
+        if (Array.isArray((v as any).enum)) prop.enum = (v as any).enum;
+        if ((v as any).items) prop.items = compactToolParameter((v as any).items);
+        res.properties[k] = prop;
+      } else {
+        res.properties[k] = v;
+      }
+    }
+  }
+  return res;
+}
+
+export function formatToolsForPrompt(declaredTools: any[]): string {
+  const formattedTools = declaredTools.map((t: any) => {
+    if (t.type === "function") {
+      let desc = (t.function.description || "").trim();
+      if (desc.length > 150) {
+        desc = desc.substring(0, 150).trim() + "...";
+      }
+      return {
+        name: t.function.name,
+        description: desc,
+        parameters: compactToolParameter(t.function.parameters),
+      };
+    }
+    return t;
+  });
+
+  return JSON.stringify(formattedTools);
+}
+
 function injectToolInstructions(
   systemPromptParts: string[],
   body: OpenAIRequest,
@@ -441,17 +486,7 @@ function injectToolInstructions(
     });
   }
 
-  const formattedTools = declaredTools.map((t: any) => {
-    if (t.type === "function") {
-      return {
-        name: t.function.name,
-        description: t.function.description || "",
-        parameters: t.function.parameters,
-      };
-    }
-    return t;
-  });
-  const toolsJson = JSON.stringify(formattedTools, null, 2);
+  const toolsJson = formatToolsForPrompt(declaredTools);
 
   const instructions = buildToolInstructions(toolsJson, bodyAny.tool_choice);
   systemPromptParts.push(instructions);

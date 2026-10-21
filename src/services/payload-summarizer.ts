@@ -201,9 +201,9 @@ export function buildBoundedPrompt(
 ): string {
   let effectiveSystemPrompt = systemPrompt || "";
 
-  // If systemPrompt by itself exceeds 70% of maxChars,
+  // If systemPrompt by itself exceeds 50% of maxChars,
   // protect the tool instructions section while compacting only the persona.
-  const maxSystemChars = Math.floor(maxChars * 0.7);
+  const maxSystemChars = Math.floor(maxChars * 0.5);
   if (effectiveSystemPrompt.length > maxSystemChars) {
     const toolMarker = "\n\n# TOOLS AVAILABLE";
     const toolIdx = effectiveSystemPrompt.indexOf(toolMarker);
@@ -220,18 +220,41 @@ export function buildBoundedPrompt(
     }
   }
 
-  // Allocate remaining budget to conversation history
+  // Allocate remaining budget to conversation history (at least 20.000 chars)
   const messageBudget = Math.max(
-    5_000,
+    20_000,
     maxChars - effectiveSystemPrompt.length - 200,
   );
 
-  // Take messages from newest to oldest
-  const includedMessages: string[] = [];
+  // 1. Identify and anchor root user request (first message where role === 'user')
+  let rootUserFormatted: string | null = null;
+  const firstUserIdx = messages.findIndex((m) => m.role === "user");
+  if (firstUserIdx !== -1) {
+    let content =
+      typeof messages[firstUserIdx].content === "string"
+        ? messages[firstUserIdx].content
+        : Array.isArray(messages[firstUserIdx].content)
+          ? messages[firstUserIdx].content
+              .map((p: any) => p.text || JSON.stringify(p))
+              .join("\n")
+          : JSON.stringify(messages[firstUserIdx].content);
+
+    if (content.length > MAX_SINGLE_MESSAGE_CHARS) {
+      content = truncateMessageContent(content);
+    }
+    rootUserFormatted = `${messages[firstUserIdx].role}: ${content}`;
+  }
+
+  const rootChars = rootUserFormatted ? rootUserFormatted.length + 2 : 0;
+  const historyBudget = Math.max(5_000, messageBudget - rootChars);
+
+  // 2. Take recent messages backwards from the end (excluding firstUserIdx)
+  const recentMessages: string[] = [];
   let currentChars = 0;
   let omittedCount = 0;
 
   for (let i = messages.length - 1; i >= 0; i--) {
+    if (i === firstUserIdx) continue;
     const msg = messages[i];
     let content =
       typeof msg.content === "string"
@@ -249,22 +272,27 @@ export function buildBoundedPrompt(
     const formatted = `${msg.role}: ${content}`;
     const nextChars = currentChars + formatted.length + 2;
 
-    if (nextChars > messageBudget && includedMessages.length > 0) {
+    if (nextChars > historyBudget && recentMessages.length > 0) {
       omittedCount = i + 1;
       break;
     }
 
-    includedMessages.unshift(formatted);
+    recentMessages.unshift(formatted);
     currentChars = nextChars;
   }
 
+  const finalMessages: string[] = [];
+  if (rootUserFormatted) {
+    finalMessages.push(rootUserFormatted);
+  }
   if (omittedCount > 0) {
-    includedMessages.unshift(
+    finalMessages.push(
       `[... ${omittedCount} older conversation turn(s) omitted to fit context window ...]`,
     );
   }
+  finalMessages.push(...recentMessages);
 
-  const conversationText = includedMessages.join("\n\n");
+  const conversationText = finalMessages.join("\n\n");
   const result = effectiveSystemPrompt
     ? `${effectiveSystemPrompt}\n\n${conversationText}`
     : conversationText;

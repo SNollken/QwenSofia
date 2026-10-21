@@ -143,4 +143,45 @@ test("payload-summarizer: buildBoundedPrompt preserves tool instructions and sch
     bounded.includes("older conversation turn(s) omitted"),
     "Must include omission marker",
   );
+  assert.ok(
+    bounded.startsWith("HERMES PERSONA RULES"),
+    "Must preserve system instructions start",
+  );
+  assert.ok(
+    bounded.includes("user: Message 0:") ||
+      bounded.includes("user: veja se tem mais algum problema?"),
+    "Must preserve user message",
+  );
+});
+
+test("payload-summarizer: buildBoundedPrompt anchors first user request and latest turns when omitting history", () => {
+  const systemPrompt = "# TOOLS AVAILABLE\n[]\n\n# TOOL CALLING FORMAT\n<tool_call>";
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "user", content: "ORIGINAL_TASK: Resumo da conclusão dessas 26 tarefas ?" },
+  ];
+  for (let i = 0; i < 100; i++) {
+    messages.push({
+      role: i % 2 === 0 ? "assistant" : "tool",
+      content: `Intermediate turn ${i} with long logs: `.repeat(50),
+    });
+  }
+  messages.push({
+    role: "tool",
+    content: "LATEST_TOOL_OUTPUT: Error reading application.properties",
+  });
+
+  const bounded = buildBoundedPrompt(messages, systemPrompt, 10_000);
+
+  assert.ok(
+    bounded.includes("ORIGINAL_TASK: Resumo da conclusão dessas 26 tarefas ?"),
+    "Root user task must be anchored at the start",
+  );
+  assert.ok(
+    bounded.includes("LATEST_TOOL_OUTPUT: Error reading application.properties"),
+    "Latest tool output must be preserved at the end",
+  );
+  assert.ok(
+    bounded.includes("older conversation turn(s) omitted"),
+    "Must note intermediate omission",
+  );
 });
