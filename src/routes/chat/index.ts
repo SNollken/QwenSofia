@@ -181,10 +181,7 @@ export async function chatCompletions(c: Context) {
 
     const files = ctx.useThreadNative ? currentFiles : allFiles;
 
-    const msgCount =
-      ctx.useThreadNative && !ctx.isNewSession
-        ? parsed.currentMessageCount
-        : parsed.messageCount;
+    const msgCount = parsed.messageCount;
 
     const personalizationChars =
       ctx.requestPersonalizationInstruction?.length ?? 0;

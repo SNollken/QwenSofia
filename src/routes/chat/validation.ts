@@ -269,6 +269,16 @@ async function buildPromptFromMessages(
     }
   }
 
+  // If the last message is a tool response, explicitly prompt the assistant to take turn
+  if (
+    messages.length > 0 &&
+    (messages[messages.length - 1].role === "tool" ||
+      messages[messages.length - 1].role === "function")
+  ) {
+    promptParts.push("Assistant:\n");
+    currentPromptParts.push("Assistant:\n");
+  }
+
   return {
     systemPromptParts,
     promptParts,

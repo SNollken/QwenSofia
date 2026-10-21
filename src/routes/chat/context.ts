@@ -82,12 +82,11 @@ export async function buildFinalContext(
     ? getLogicalThreadState(sessionId)
     : null;
 
-  const hasTrailingToolResult = detectTrailingToolResult(messages);
-  // Thread-native: send full history when Qwen has no context yet, but preserve
-  // tool-result deltas because the upstream parent chain already owns the call.
-  const activePrompt =
-    (!existingThread && !hasTrailingToolResult ? prompt : currentPrompt) ||
-    prompt;
+  // In UI-stream / new-chat model, every request runs on a clean DOM and must
+  // contain the full conversation history (prompt) so Qwen knows the user's
+  // original objective, earlier turns, and what tools were called.
+  // Truncation/bounding (if needed) is handled by buildBoundedPrompt.
+  const activePrompt = prompt;
   const isTitleGenerationRequest = detectTitleGenerationRequest(messages);
   const isAuxiliaryRequest =
     isInternalSummarizationRequest || isTitleGenerationRequest;
