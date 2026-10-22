@@ -79,16 +79,22 @@ export function getIncrementalDelta(
   }
 
   const threshold = Math.min(scanWindow, 4);
-  if (commonPrefixLen >= threshold) {
-    // If it's cumulative (commonPrefixLen >= threshold), the new delta can
-    // ONLY be characters that have NOT been emitted yet (at or beyond oldStr.length)!
-    // Emitting from commonPrefixLen when commonPrefixLen < oldStr.length causes
-    // severe text stuttering/duplication on the client.
+
+  // Check if newStr shares the beginning or ending of oldStr to detect cumulative snapshots
+  const probePrefix = oldStr.slice(0, Math.min(16, oldStr.length));
+  const probeSuffix = oldStr.slice(-Math.min(16, oldStr.length));
+  const sharesContent =
+    (probePrefix.length >= 6 && newStr.includes(probePrefix)) ||
+    (probeSuffix.length >= 6 && newStr.includes(probeSuffix));
+
+  if (commonPrefixLen >= threshold || (sharesContent && newStr.length >= oldStr.length)) {
+    // If it's cumulative, the new delta can ONLY be characters that have NOT
+    // been emitted yet (at or beyond oldStr.length)!
     const startIdx = Math.max(oldStr.length, commonPrefixLen);
     return buildDeltaResult(newStr.substring(startIdx), newStr);
   }
 
-  // Treat as strictly incremental to avoid false-positive corruptions
+  // Treat as strictly incremental only when newStr is a small token/word chunk
   return buildDeltaResult(newStr, oldStr + newStr);
 }
 

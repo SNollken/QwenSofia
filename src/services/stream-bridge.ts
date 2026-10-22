@@ -814,7 +814,14 @@ export async function browserUiStreamFetch(
               );
               const isGenerating = !!stopBtn;
 
-              if (els.length <= initialResponses) {
+              const isNewChatPage =
+                window.location.href.includes("/c/") &&
+                !window.location.href.includes("/c/new-chat");
+              // On a new chat URL, the first response element is already our new message
+              const requiredCount =
+                isNewChatPage && initialResponses > 0 ? 0 : initialResponses;
+
+              if (els.length <= requiredCount) {
                 return {
                   text: "",
                   thoughtText: "",
