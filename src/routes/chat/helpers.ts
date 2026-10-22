@@ -80,7 +80,12 @@ export function getIncrementalDelta(
 
   const threshold = Math.min(scanWindow, 4);
   if (commonPrefixLen >= threshold) {
-    return buildDeltaResult(newStr.substring(commonPrefixLen), newStr);
+    // If it's cumulative (commonPrefixLen >= threshold), the new delta can
+    // ONLY be characters that have NOT been emitted yet (at or beyond oldStr.length)!
+    // Emitting from commonPrefixLen when commonPrefixLen < oldStr.length causes
+    // severe text stuttering/duplication on the client.
+    const startIdx = Math.max(oldStr.length, commonPrefixLen);
+    return buildDeltaResult(newStr.substring(startIdx), newStr);
   }
 
   // Treat as strictly incremental to avoid false-positive corruptions

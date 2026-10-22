@@ -831,18 +831,39 @@ export async function browserUiStreamFetch(
                 ? (thoughtEl.textContent || "").trim()
                 : "";
 
-              const clone = last.cloneNode(true) as HTMLElement;
-              clone
-                .querySelectorAll(
-                  ".thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
-                )
-                .forEach((el) => el.remove());
-              clone
-                .querySelectorAll(
-                  "button, .code-block-header, [class*='code-header'], [class*='code-block-header']",
-                )
-                .forEach((el) => el.remove());
-              const text = (clone.textContent || "").trim();
+              // Hide auxiliary UI elements (buttons, code headers, thought blocks)
+              // to read clean, layout-aware innerText with preserved newlines and lists
+              const hideEls = last.querySelectorAll(
+                "button, .code-block-header, [class*='code-header'], .thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
+              );
+              const savedDisplays: Array<{ el: HTMLElement; display: string }> = [];
+              hideEls.forEach((h) => {
+                const htmlEl = h as HTMLElement;
+                savedDisplays.push({ el: htmlEl, display: htmlEl.style.display });
+                htmlEl.style.display = "none";
+              });
+
+              let text = (last as HTMLElement).innerText || "";
+
+              savedDisplays.forEach((item) => {
+                item.el.style.display = item.display;
+              });
+
+              // Fallback to clone.textContent only if innerText is completely empty
+              if (!text.trim()) {
+                const clone = last.cloneNode(true) as HTMLElement;
+                clone
+                  .querySelectorAll(
+                    ".thought-content, .reasoning-content, details.think-block, [class*='thinking-content']",
+                  )
+                  .forEach((el) => el.remove());
+                clone
+                  .querySelectorAll(
+                    "button, .code-block-header, [class*='code-header'], [class*='code-block-header']",
+                  )
+                  .forEach((el) => el.remove());
+                text = clone.textContent || "";
+              }
 
               return { text, thoughtText, isGenerating, hasNewMessage: true };
             },

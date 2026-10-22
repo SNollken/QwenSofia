@@ -81,6 +81,23 @@ test("getIncrementalDelta: handles long cumulative streams without duplicating p
   assert.strictEqual(res.matchedContent, nextChunk);
 });
 
+test("getIncrementalDelta: never duplicates text when cumulative stream has internal markdown or whitespace shifts", () => {
+  const step1 = "Diagnóstico do painel atual: **O que daria pra fazer";
+  const res1 = getIncrementalDelta("", step1);
+  assert.strictEqual(res1.delta, step1);
+
+  // In step 2, markdown renders: ** was converted and text shifted slightly at index 30
+  const step2 = "Diagnóstico do painel atual:\nO que daria pra fazer, em ordem de impacto:";
+  const res2 = getIncrementalDelta(res1.matchedContent, step2);
+
+  // Must NEVER re-emit "O que daria pra fazer" which was already sent in step 1!
+  assert.ok(
+    !res2.delta.includes("O que daria pra fazer"),
+    `Must not duplicate already sent prefix, got delta: ${JSON.stringify(res2.delta)}`,
+  );
+  assert.strictEqual(res2.delta, "em ordem de impacto:");
+});
+
 test("formatThinkingSummaryContent: handles string content directly", () => {
   const formatted = formatThinkingSummaryContent({
     content: "Pensando na resposta...",
