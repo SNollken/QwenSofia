@@ -605,12 +605,10 @@ export async function browserUiStreamFetch(
         await page.waitForTimeout(500);
       }
     } else {
-      const isAlreadyAtRootOrNew =
-        currentUrl === "https://chat.qwen.ai/" ||
-        currentUrl === "https://chat.qwen.ai" ||
-        currentUrl.includes("/c/new-chat");
-      if (!isAlreadyAtRootOrNew) {
-        console.log(`[UIStream 2] Navigating to /c/new-chat...`);
+      if (!currentUrl.includes("/c/new-chat")) {
+        console.log(
+          `[UIStream 2] Ensuring clean chat at /c/new-chat (was ${currentUrl})...`,
+        );
         await page
           .goto("https://chat.qwen.ai/c/new-chat", {
             waitUntil: "domcontentloaded",
@@ -745,15 +743,26 @@ export async function browserUiStreamFetch(
 
   if (stillHasPrompt) {
     console.log(
-      `[UIStream 6.5] Textarea retained content after click, retrying submit via Enter and button...`,
+      `[UIStream 6.5] Textarea retained content after click, retrying submit via DOM click and Enter...`,
     );
-    await page.focus("textarea").catch(() => {});
-    await page.keyboard.press("Enter").catch(() => {});
-    const retryBtn = await page.$(
-      "button.send-button:not([disabled]), button[aria-label*='enviar' i]:not([disabled]), button[aria-label*='send' i]:not([disabled]), .chat-prompt-send-button:not([disabled])",
-    );
-    if (retryBtn) {
-      await retryBtn.click({ force: true }).catch(() => {});
+    await page
+      .evaluate(() => {
+        const btn = document.querySelector(
+          "button.send-button, .chat-prompt-send-button, button[aria-label*='send' i], button[aria-label*='enviar' i]",
+        );
+        if (btn) (btn as HTMLElement).click();
+      })
+      .catch(() => {});
+    await page.waitForTimeout(300);
+    const stillHasAfterDomClick = await page
+      .evaluate(() => {
+        const ta = document.querySelector("textarea");
+        return (ta?.value || "").trim().length > 0;
+      })
+      .catch(() => false);
+    if (stillHasAfterDomClick) {
+      await page.focus("textarea").catch(() => {});
+      await page.keyboard.press("Enter").catch(() => {});
     }
   }
 
