@@ -604,19 +604,6 @@ export async function browserUiStreamFetch(
           .catch(() => {});
         await page.waitForTimeout(500);
       }
-    } else {
-      if (!currentUrl.includes("/c/new-chat")) {
-        console.log(
-          `[UIStream 2] Ensuring clean chat at /c/new-chat (was ${currentUrl})...`,
-        );
-        await page
-          .goto("https://chat.qwen.ai/c/new-chat", {
-            waitUntil: "domcontentloaded",
-            timeout: 15000,
-          })
-          .catch(() => {});
-        await page.waitForTimeout(500);
-      }
     }
 
   console.log(`[UIStream 3] Cleaning overlays and finding textarea...`);
@@ -730,40 +717,6 @@ export async function browserUiStreamFetch(
     );
     await page.focus("textarea").catch(() => {});
     await page.keyboard.press("Enter").catch(() => {});
-  }
-
-  // Self-healing check: if textarea still retains the prompt, retry submit
-  await page.waitForTimeout(400);
-  const stillHasPrompt = await page
-    .evaluate(() => {
-      const ta = document.querySelector("textarea");
-      return (ta?.value || "").trim().length > 0;
-    })
-    .catch(() => false);
-
-  if (stillHasPrompt) {
-    console.log(
-      `[UIStream 6.5] Textarea retained content after click, retrying submit via DOM click and Enter...`,
-    );
-    await page
-      .evaluate(() => {
-        const btn = document.querySelector(
-          "button.send-button, .chat-prompt-send-button, button[aria-label*='send' i], button[aria-label*='enviar' i]",
-        );
-        if (btn) (btn as HTMLElement).click();
-      })
-      .catch(() => {});
-    await page.waitForTimeout(300);
-    const stillHasAfterDomClick = await page
-      .evaluate(() => {
-        const ta = document.querySelector("textarea");
-        return (ta?.value || "").trim().length > 0;
-      })
-      .catch(() => false);
-    if (stillHasAfterDomClick) {
-      await page.focus("textarea").catch(() => {});
-      await page.keyboard.press("Enter").catch(() => {});
-    }
   }
 
   console.log(`[UIStream 7] Sent! Returning ReadableStream...`);
