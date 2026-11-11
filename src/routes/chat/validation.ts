@@ -482,7 +482,7 @@ function injectToolInstructions(
 ): boolean {
   const bodyAny = body as any;
   const declaredTools = Array.isArray(bodyAny.tools) ? bodyAny.tools : [];
-  const shouldParseToolCalls = declaredTools.length > 0;
+  const shouldParseToolCalls = declaredTools.length > 0 && bodyAny.tool_choice !== "none";
 
   if (!shouldParseToolCalls) return false;
 

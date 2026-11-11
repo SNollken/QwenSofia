@@ -10,8 +10,12 @@ import {
   QwenNetworkError,
   RetryableQwenStreamError,
   syncQwenRequestPersonalization,
+  isTmdChallenge,
   type LogicalThreadEntry,
 } from "../../services/qwen.ts";
+import { ensureUsableToken } from "../../services/token-refresh.ts";
+import { detectQuotaLimitMessage } from "../../utils/quota-detector.ts";
+import { rotateTorCircuitForProxy } from "../../utils/tor-rotator.ts";
 import type { TokenEstimationContext } from "../../services/token-estimation-metrics.ts";
 import { isAuthMockEnabled } from "../../services/auth-playwright.ts";
 import {
@@ -31,7 +35,9 @@ import {
   getAccountCooldownInfo,
   clearAccountCooldown,
   msUntilMidnight,
+  quarantineAccount,
 } from "../../core/account-manager.ts";
+import { markAccountModelLimited } from "../../core/account-model-limits.ts";
 import { getAccountCredentials, loadAccounts } from "../../core/accounts.ts";
 import { registerStream, removeStream } from "../../core/stream-registry.ts";
 import {
@@ -271,6 +277,61 @@ function isAntiBotError(err: any): boolean {
   );
 }
 
+export type AccountRetryClass = "quota" | "tmd" | "relogin" | "none";
+
+/**
+ * Classifica o erro de uma tentativa antes de decidir entre renovar token,
+ * marcar quota do modelo ou quarantear a conta.
+ * A ordem importa: infra transitória não é culpa da conta, captcha/TMD vence
+ * quota (a conta está queimada, não a cota) e token expirado vence os dois
+ * (renovar evita perder a conta).
+ */
+export function classifyAccountRetryError(err: any): AccountRetryClass {
+  if (
+    err instanceof QwenUpstreamUnavailableError ||
+    err instanceof QwenNetworkError
+  ) {
+    return "none";
+  }
+
+  const message = String(err?.message ?? err ?? "");
+
+  if (
+    isTmdChallenge(message) ||
+    err?.upstreamCode === "FAIL_SYS_USER_VALIDATE" ||
+    err?.upstreamCode === "RGV587_ERROR" ||
+    /anti-bot|waf challenge/i.test(message)
+  ) {
+    return "tmd";
+  }
+
+  if (
+    err instanceof QwenSessionExpiredError ||
+    err?.name === "QwenSessionExpiredError" ||
+    err?.upstreamStatus === 401 ||
+    /unauthorized|token expired|session expired/i.test(message)
+  ) {
+    return "relogin";
+  }
+
+  if (detectQuotaLimitMessage(message).isQuotaLimit) return "quota";
+  return "none";
+}
+
+/**
+ * Marca apenas o modelo informado no aviso de limite diário como esgotado para
+ * a conta, até a virada do dia. Retorna o modelo efetivamente marcado.
+ */
+export function markQuotaExhaustedModel(
+  accountId: string,
+  model: string,
+  message: string,
+): string {
+  const limitedModel = detectQuotaLimitMessage(message).model ?? model;
+  markAccountModelLimited(accountId, limitedModel, msUntilMidnight(), "DailyLimit");
+  return limitedModel;
+}
+
 async function attemptRelogin(
   accountId: string,
   accountEmail: string,
@@ -366,7 +427,7 @@ export async function acquireUpstreamStream(
     console.log(`[TRACE 1] acquireUpstreamStream loop for account: ${accountEmail} (${accountId})`);
 
     if (triedAccountIds.has(accountId)) {
-      account = getNextAvailableAccount(triedAccountIds);
+      account = getNextAvailableAccount(triedAccountIds, model);
       continue;
     }
     triedAccountIds.add(accountId);
@@ -422,7 +483,7 @@ export async function acquireUpstreamStream(
             `⚠️  [Chat] Sticky account is on cooldown; recreating upstream chat on another account with full context.`,
           );
         }
-        account = getNextAvailableAccount(triedAccountIds);
+        account = getNextAvailableAccount(triedAccountIds, model);
         continue;
       }
     }
@@ -527,8 +588,10 @@ export async function acquireUpstreamStream(
       );
     }
 
-    // Mark anti-bot blocked accounts for cooldown and reset profile in background
-    if (isAntiBotError(lastError)) {
+    // Mark anti-bot blocked accounts for cooldown and reset profile in background.
+    // Skip when the retry loop already set a cooldown (e.g. TMD quarantine),
+    // otherwise this shorter 10min window would overwrite it.
+    if (isAntiBotError(lastError) && !getAccountCooldownInfo(accountId)) {
       markAccountRateLimited(accountId, 10 * 60 * 1000, "AntiBot");
       void (async () => {
         try {
@@ -555,7 +618,7 @@ export async function acquireUpstreamStream(
       });
     }
 
-    account = getNextAvailableAccount(triedAccountIds);
+    account = getNextAvailableAccount(triedAccountIds, model);
   }
 
   // All accounts exhausted.
@@ -925,16 +988,48 @@ async function createStreamWithRetry(
       };
     }
 
-    if (err.name === "QwenSessionExpiredError") {
+    const retryClass = classifyAccountRetryError(err);
+
+    if (retryClass === "tmd") {
       console.warn(
-        `🔄 [Chat] Session expired for ${accountEmail} (${accountId}). Attempting re-login...`,
+        `🛡️  [Chat] TMD/WAF challenge | ${accountEmail} (${accountId}) | quarantining for 30min`,
       );
-      const reLoginOk = await attemptRelogin(
-        accountId,
-        accountEmail,
-        params.signal,
+      quarantineAccount(accountId, "TMDChallenge", 30 * 60 * 1000);
+      try {
+        await rotateTorCircuitForProxy(process.env.PLAYWRIGHT_PROXY);
+      } catch (rotateErr) {
+        console.warn(
+          `⚠️  [Tor] Circuit rotation failed: ${(rotateErr as Error).message}`,
+        );
+      }
+      return { success: false, error: err };
+    }
+
+    if (retryClass === "relogin") {
+      console.warn(
+        `🔄 [Chat] Session/token expired for ${accountEmail} (${accountId}). Renewing token...`,
       );
-      if (reLoginOk) continue;
+      let tokenOk = false;
+      try {
+        tokenOk = await ensureUsableToken(accountId);
+      } catch (tokenErr) {
+        console.warn(
+          `⚠️  [Token] Renewal failed for ${accountEmail}: ${(tokenErr as Error).message}`,
+        );
+      }
+
+      if (!tokenOk) {
+        // Sem token renovável: último recurso é o re-login completo.
+        const reLoginOk = await attemptRelogin(
+          accountId,
+          accountEmail,
+          params.signal,
+        );
+        if (reLoginOk && retries > 0) continue;
+        return { success: false, error: err };
+      }
+
+      if (retries > 0) continue;
       return { success: false, error: err };
     }
 
@@ -952,6 +1047,20 @@ async function createStreamWithRetry(
         );
         await waitForRetry(config.retry.baseDelayMs, params.signal);
         continue;
+      }
+
+      // Quota diária do modelo: bloqueia só este modelo e deixa o loop trocar
+      // de conta (getNextAvailableAccount consulta o limite por modelo).
+      if (retryClass === "quota") {
+        const limitedModel = markQuotaExhaustedModel(
+          accountId,
+          params.model,
+          quotaMsg,
+        );
+        console.warn(
+          `🚫 [Chat] Daily limit | ${accountEmail} (${accountId}) | model=${limitedModel} | blocked until midnight`,
+        );
+        return { success: false, error: err };
       }
 
       const hourHint = err.message?.match(/Wait about (\d+) hour/);

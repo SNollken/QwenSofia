@@ -26,6 +26,11 @@ import {
   type FingerprintProfile,
 } from "./fingerprint.ts";
 import { subtlePageActivity } from "./human-behavior.ts";
+import {
+  getBxVersion,
+  getQwenWebVersion,
+  refreshQwenVersions,
+} from "./qwen-versions.ts";
 
 // Try to import playwright-extra and stealth, fallback to regular playwright
 let chromiumWithStealth: typeof chromium | null = null;
@@ -135,6 +140,7 @@ export async function ensurePageForAccount(
 interface AccountHeaderCache {
   headers: Record<string, string>;
   refreshInProgress: boolean;
+  timestamp?: number;
 }
 
 export function capturedQwenHeaders(
@@ -344,10 +350,28 @@ function getHeaderCache(accountId: string): AccountHeaderCache {
     cache = {
       headers: {},
       refreshInProgress: false,
+      timestamp: Date.now(),
     };
     headerCaches.set(accountId, cache);
   }
   return cache;
+}
+
+/** Cached browser-captured headers for an account, or null when none exist. */
+export function getAccountHeaderCache(
+  accountId: string,
+): Record<string, string> | null {
+  return headerCaches.get(accountId)?.headers ?? null;
+}
+
+/** Overwrite the cached authorization header for an account. */
+export function setAccountAuthorization(
+  accountId: string,
+  authorization: string,
+): void {
+  const cache = getHeaderCache(accountId);
+  cache.headers.authorization = authorization;
+  cache.timestamp = Date.now();
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -385,6 +409,7 @@ export async function getPlaywrightBasicHeaders(
   bxV: string;
   bxUa: string;
   bxUmidtoken: string;
+  version: string;
 }> {
   signal?.throwIfAborted();
   const page = accountPages.get(accountId);
@@ -399,7 +424,9 @@ export async function getPlaywrightBasicHeaders(
   const cache = getHeaderCache(accountId);
   const bxUa = cache.headers["bx-ua"] || "";
   const bxUmidtoken = cache.headers["bx-umidtoken"] || "";
-  const bxV = cache.headers["bx-v"] || "2.5.36";
+  // Captured header wins; live-detected version is the fallback.
+  const bxV = cache.headers["bx-v"] || getBxVersion();
+  const version = getQwenWebVersion();
 
   const cookie = await getCookies(accountId);
 
@@ -411,6 +438,7 @@ export async function getPlaywrightBasicHeaders(
     bxV,
     bxUa,
     bxUmidtoken,
+    version,
   };
 }
 
@@ -565,6 +593,13 @@ export async function initPlaywrightForAccount(
           timeout: config.timeouts.navigation,
         });
         await dismissAgeModal(acctPage);
+        try {
+          await refreshQwenVersions(acctPage);
+        } catch (versionErr) {
+          console.warn(
+            `[Playwright] Failed to detect Qwen versions for ${maskEmail(account.email)}: ${getErrorMessage(versionErr)}`,
+          );
+        }
         const cookies = await acctPage.context().cookies();
         const hasToken = cookies.some((c) => c.name === "token");
         const url = acctPage.url();

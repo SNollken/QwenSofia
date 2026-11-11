@@ -64,6 +64,8 @@ test("config exposes only Playwright/thread-native current auth and context sett
 test("config keeps Qwen anti-bot static config limited to bx-v fallback", () => {
   assert.equal(typeof config.auth.userAgent, "string");
   assert.equal(typeof config.auth.bxV, "string");
+  assert.equal(typeof config.qwen.webVersion, "string");
+  assert.equal(typeof config.qwen.bxV, "string");
   assert.equal("bxUa" in config.auth, false);
   assert.equal("bxUmidtoken" in config.auth, false);
 });

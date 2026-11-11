@@ -3,6 +3,7 @@ import {
   loadAccounts,
   updateAccountCooldown,
 } from "./accounts.ts";
+import { isAccountModelLimited } from "./account-model-limits.ts";
 
 let currentIndex = 0;
 
@@ -144,6 +145,7 @@ export function getNextAccount(): QwenAccount | null {
 
 export function getNextAvailableAccount(
   triedAccountIds?: Set<string> | string,
+  model?: string,
 ): QwenAccount | null {
   const accounts = loadAccounts();
   if (accounts.length === 0) return null;
@@ -157,15 +159,16 @@ export function getNextAvailableAccount(
     triedSet = new Set(triedAccountIds ? [triedAccountIds] : []);
   }
 
-  // 1. Try to find an untried account that is NOT on cooldown
+  // 1. Try to find an untried account that is neither on cooldown nor out of
+  //    quota for the requested model.
   for (let i = 0; i < accounts.length; i++) {
     const idx = (currentIndex + i) % accounts.length;
     const account = accounts[idx];
     if (triedSet.has(account.id)) continue;
-    if (!isAccountOnCooldown(account.id)) {
-      currentIndex = (idx + 1) % accounts.length;
-      return account;
-    }
+    if (isAccountOnCooldown(account.id)) continue;
+    if (model && isAccountModelLimited(account.id, model)) continue;
+    currentIndex = (idx + 1) % accounts.length;
+    return account;
   }
 
   // 2. If all untried accounts are on cooldown, return the untried one with the shortest remaining cooldown
@@ -173,6 +176,7 @@ export function getNextAvailableAccount(
   let bestRemaining = Infinity;
   for (const account of accounts) {
     if (triedSet.has(account.id)) continue;
+    if (model && isAccountModelLimited(account.id, model)) continue;
     const info = getAccountCooldownInfo(account.id);
     if (info && info.remainingMs < bestRemaining) {
       bestRemaining = info.remainingMs;
@@ -180,6 +184,27 @@ export function getNextAvailableAccount(
     }
   }
   return best;
+}
+
+/** Puts an account in cooldown for `durationMs` with an explicit reason. */
+export function quarantineAccount(
+  accountId: string,
+  reason: string,
+  durationMs = 30 * 60 * 1000,
+): void {
+  markAccountRateLimited(accountId, durationMs, reason);
+  console.warn(
+    `🚧 [AccountManager] Account quarantined | ${accountId} | reason=${reason} | ${Math.round(durationMs / 1000)}s`,
+  );
+}
+
+/** True when the account is neither cooling down nor out of quota for `model`. */
+export function isAccountAvailableForModel(
+  accountId: string,
+  model?: string,
+): boolean {
+  if (isAccountOnCooldown(accountId)) return false;
+  return !model || !isAccountModelLimited(accountId, model);
 }
 
 export function getCooldownStatus(): Record<

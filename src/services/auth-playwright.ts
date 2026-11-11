@@ -66,6 +66,7 @@ export async function getBasicHeaders(
   bxV: string;
   bxUa: string;
   bxUmidtoken: string;
+  version: string;
 }> {
   signal?.throwIfAborted();
   if (isAuthMockEnabled()) {
@@ -75,6 +76,7 @@ export async function getBasicHeaders(
       bxV: "2.5.36",
       bxUa: "mock-bx-ua",
       bxUmidtoken: "mock-bx-umidtoken",
+      version: "0.3.26",
     };
   }
 
@@ -105,6 +107,7 @@ export async function getQwenHeaders(
         "bx-v": basic.bxV,
         "bx-ua": basic.bxUa,
         "bx-umidtoken": basic.bxUmidtoken,
+        version: basic.version,
       },
       chatSessionId: "",
       parentMessageId: null,
@@ -132,6 +135,7 @@ export async function getQwenHeaders(
       "bx-v": basic.bxV,
       "bx-ua": basic.bxUa || "",
       "bx-umidtoken": basic.bxUmidtoken || "",
+      version: basic.version,
     },
     chatSessionId: "",
     parentMessageId: null,

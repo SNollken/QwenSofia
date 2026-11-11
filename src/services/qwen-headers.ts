@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
+import { getBxVersion, getQwenWebVersion } from "./qwen-versions.ts";
 
-export const QWEN_WEB_VERSION = "0.2.63";
+/** Snapshot of the current `version` header value. */
+export const QWEN_WEB_VERSION = getQwenWebVersion();
 export const DEFAULT_QWEN_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
@@ -10,6 +12,7 @@ export interface BuildQwenHeadersOptions {
   bxUa?: string;
   bxUmidtoken?: string;
   bxV?: string;
+  version?: string;
   chatSessionId?: string | null;
   extra?: Record<string, string>;
 }
@@ -41,9 +44,9 @@ export function buildQwenRequestHeaders(
     Connection: "keep-alive",
     "User-Agent": opts.userAgent || DEFAULT_QWEN_USER_AGENT,
     "X-Request-Id": uuidv4(),
-    "bx-v": opts.bxV || "2.5.36",
+    "bx-v": opts.bxV || getBxVersion(),
     source: "web",
-    version: QWEN_WEB_VERSION,
+    version: opts.version || getQwenWebVersion(),
     timezone: new Date().toString().split(" (")[0],
   };
 

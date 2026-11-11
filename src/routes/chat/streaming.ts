@@ -15,6 +15,7 @@ import {
   updateSessionParent,
   QwenUpstreamError,
   RetryableQwenStreamError,
+  isTmdChallenge,
 } from "../../services/qwen.ts";
 import type { OpenAIRequest, Usage } from "../../utils/types.ts";
 import { StreamingToolParser } from "../../tools/parser.ts";
@@ -53,6 +54,10 @@ import {
   buildUsage,
 } from "./helpers.ts";
 import { isOverloadMessage } from "../../utils/overload-detector.ts";
+import { detectQuotaLimitMessage } from "../../utils/quota-detector.ts";
+import { markAccountModelLimited } from "../../core/account-model-limits.ts";
+import { msUntilMidnight, quarantineAccount } from "../../core/account-manager.ts";
+import { rotateTorCircuitForProxy } from "../../utils/tor-rotator.ts";
 
 const INCOMPLETE_TOOL_CALL_MESSAGE =
   "QwenSofia could not recover an incomplete tool call. Please retry the request.";
@@ -128,6 +133,44 @@ function createRetryableInvalidInputError(
   error.forceNewChat = true;
   error.retryWithFullPrompt = true;
   return error;
+}
+
+/**
+ * Marks the model as exhausted for the account and throws a retryable error so
+ * the outer loop switches account. The message deliberately avoids the word
+ * "quota": index.ts would otherwise put the whole account on a 24h cooldown,
+ * while only this (account, model) pair is actually limited.
+ */
+function throwQuotaLimitError(
+  activeAccountId: string,
+  model: string,
+  details: string,
+): never {
+  markAccountModelLimited(activeAccountId, model, msUntilMidnight(), "DailyLimit");
+  const error = new RetryableQwenStreamError(
+    `Qwen daily model limit: ${details.substring(0, 200)}`,
+    config.retry.baseDelayMs,
+  ) as RetryableQwenStreamError & { upstreamCode?: string };
+  error.upstreamCode = "quota_limit";
+  throw error;
+}
+
+function isUnauthorizedMessage(message: string): boolean {
+  return /unauthorized|token expired|session expired|\b401\b/i.test(message);
+}
+
+/** Throws a retryable error for an expired token so the loop picks another account. */
+function throwUnauthorizedError(
+  activeAccountId: string,
+  details: string,
+): never {
+  quarantineAccount(activeAccountId, "Unauthorized", 5 * 60 * 1000);
+  const error = new RetryableQwenStreamError(
+    `Qwen unauthorized: ${details.substring(0, 200)}`,
+    config.retry.baseDelayMs,
+  ) as RetryableQwenStreamError & { upstreamCode?: string };
+  error.upstreamCode = "unauthorized";
+  throw error;
 }
 
 export interface AssistantCompleteEvent {
@@ -392,24 +435,59 @@ export async function processNonStreamingResponse(
             if (
               errDetails.includes("FAIL_SYS_USER_VALIDATE") ||
               errDetails.includes("RGV587_ERROR") ||
-              errDetails.includes("user validate")
+              errDetails.includes("user validate") ||
+              isTmdChallenge(errDetails)
             ) {
-              throw new RetryableQwenStreamError(
+              quarantineAccount(activeAccountId, "TMDChallenge", 30 * 60 * 1000);
+              try {
+                await rotateTorCircuitForProxy(process.env.PLAYWRIGHT_PROXY);
+              } catch {}
+              const err = new RetryableQwenStreamError(
                 `Qwen anti-bot: ${errCode}: ${errDetails}`,
                 config.antiBot.baseDelayMs,
-              );
+              ) as any;
+              err.upstreamCode = "anti_bot";
+              err.forceNewChat = true;
+              throw err;
             }
 
-            // Quota exceeded in SSE chunk — retryable (try other account)
+            // 401 / Unauthorized in SSE chunk — mark account and retry on another
             if (
+              errCode === "Unauthorized" ||
+              errCode === "unauthorized" ||
+              /unauthorized|401/i.test(errDetails)
+            ) {
+              quarantineAccount(activeAccountId, "Unauthorized", 5 * 60 * 1000);
+              const err = new RetryableQwenStreamError(
+                `Qwen unauthorized: ${errCode}: ${errDetails.substring(0, 200)}`,
+                config.retry.baseDelayMs,
+              ) as any;
+              err.upstreamCode = "unauthorized";
+              err.forceNewChat = true;
+              throw err;
+            }
+
+            // Daily quota limit detected in stream content/error text
+            const quota = detectQuotaLimitMessage(errDetails);
+            if (
+              quota.isQuotaLimit ||
               errDetails.includes("Allocated quota exceeded") ||
               errDetails.includes("quota exceeded") ||
               errDetails.includes("token-limit")
             ) {
-              throw new RetryableQwenStreamError(
+              markAccountModelLimited(
+                activeAccountId,
+                quota.model || body.model,
+                msUntilMidnight(),
+                "DailyLimit",
+              );
+              const err = new RetryableQwenStreamError(
                 `Qwen quota: ${errCode}: ${errDetails.substring(0, 200)}`,
                 config.retry.baseDelayMs,
-              );
+              ) as any;
+              err.upstreamCode = "quota_limit";
+              err.forceNewChat = true;
+              throw err;
             }
 
             if (isOverloadMessage(errDetails)) {
@@ -608,6 +686,12 @@ export async function processNonStreamingResponse(
 
     if (remainingText) {
       finalContent += remainingText;
+    }
+
+    // Qwen delivers the daily-limit notice as ordinary answer text. Retry on
+    // another account with the same model instead of returning the notice.
+    if (detectQuotaLimitMessage(finalContent).isQuotaLimit) {
+      throwQuotaLimitError(activeAccountId, body.model, finalContent);
     }
     for (const tc of remainingToolCalls) {
       toolCallsOut.push({
@@ -1086,6 +1170,10 @@ export async function processStreamingResponse(
       };
 
       const emitAnswerText = async (textChunk: string) => {
+        const q = detectQuotaLimitMessage(textChunk);
+        if (q.isQuotaLimit) {
+          throwQuotaLimitError(activeAccountId, body.model, textChunk);
+        }
         if (!toolParser) {
           finalContent += textChunk;
           await writeEvent({
@@ -1116,6 +1204,9 @@ export async function processStreamingResponse(
         }
 
         if (text) {
+          if (detectQuotaLimitMessage(text).isQuotaLimit) {
+            throwQuotaLimitError(activeAccountId, body.model, text);
+          }
           finalContent += text;
           await writeEvent({
             id: completionId,
@@ -1269,6 +1360,9 @@ export async function processStreamingResponse(
           : result.matchedContent;
         lastRawContentLength = lastRawContent.length;
         lastRawContentSuffix = lastRawContent.slice(-64);
+        if (detectQuotaLimitMessage(normalized.content).isQuotaLimit) {
+          throwQuotaLimitError(activeAccountId, body.model, normalized.content);
+        }
         return result.delta;
       };
 
@@ -1346,24 +1440,59 @@ export async function processStreamingResponse(
               if (
                 errDetails.includes("FAIL_SYS_USER_VALIDATE") ||
                 errDetails.includes("RGV587_ERROR") ||
-                errDetails.includes("user validate")
+                errDetails.includes("user validate") ||
+                isTmdChallenge(errDetails)
               ) {
-                throw new RetryableQwenStreamError(
+                quarantineAccount(activeAccountId, "TMDChallenge", 30 * 60 * 1000);
+                try {
+                  await rotateTorCircuitForProxy(process.env.PLAYWRIGHT_PROXY);
+                } catch {}
+                const err = new RetryableQwenStreamError(
                   `Qwen anti-bot: ${errCode}: ${errDetails}`,
                   config.antiBot.baseDelayMs,
-                );
+                ) as any;
+                err.upstreamCode = "anti_bot";
+                err.forceNewChat = true;
+                throw err;
               }
 
-              // Quota exceeded in SSE chunk — retryable (try other account)
+              // 401 / Unauthorized in SSE chunk — mark account and retry on another
               if (
+                errCode === "Unauthorized" ||
+                errCode === "unauthorized" ||
+                /unauthorized|401/i.test(errDetails)
+              ) {
+                quarantineAccount(activeAccountId, "Unauthorized", 5 * 60 * 1000);
+                const err = new RetryableQwenStreamError(
+                  `Qwen unauthorized: ${errCode}: ${errDetails.substring(0, 200)}`,
+                  config.retry.baseDelayMs,
+                ) as any;
+                err.upstreamCode = "unauthorized";
+                err.forceNewChat = true;
+                throw err;
+              }
+
+              // Daily quota limit detected in stream content/error text
+              const quota = detectQuotaLimitMessage(errDetails);
+              if (
+                quota.isQuotaLimit ||
                 errDetails.includes("Allocated quota exceeded") ||
                 errDetails.includes("quota exceeded") ||
                 errDetails.includes("token-limit")
               ) {
-                throw new RetryableQwenStreamError(
+                markAccountModelLimited(
+                  activeAccountId,
+                  quota.model || body.model,
+                  msUntilMidnight(),
+                  "DailyLimit",
+                );
+                const err = new RetryableQwenStreamError(
                   `Qwen quota: ${errCode}: ${errDetails.substring(0, 200)}`,
                   config.retry.baseDelayMs,
-                );
+                ) as any;
+                err.upstreamCode = "quota_limit";
+                err.forceNewChat = true;
+                throw err;
               }
 
               if (isOverloadMessage(errDetails)) {

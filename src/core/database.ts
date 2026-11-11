@@ -278,6 +278,20 @@ function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_responses_store_stored_at
       ON responses_store(stored_at);
+
+    -- Per-model quota limits: an account can be out of quota for one model
+    -- while still serving others.
+    CREATE TABLE IF NOT EXISTS account_model_limits (
+      account_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      until INTEGER NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_account_model_limits_until
+      ON account_model_limits(until);
   `);
 
   // Cooldown persistence columns — wrapped in try-catch because
@@ -379,6 +393,62 @@ function migrateFromJson(db: Database.Database): void {
       err.message,
     );
   }
+}
+
+// Per-model quota limits. Qwen applies a daily limit per model, so an
+// account can be out of quota for one model while still serving others.
+
+export function listPersistedModelLimits(): Array<{
+  account_id: string;
+  model: string;
+  until: number;
+  reason: string;
+  updated_at: number;
+}> {
+  return getDatabase()
+    .prepare(
+      "SELECT account_id, model, until, reason, updated_at FROM account_model_limits",
+    )
+    .all() as Array<{
+    account_id: string;
+    model: string;
+    until: number;
+    reason: string;
+    updated_at: number;
+  }>;
+}
+
+export function upsertModelLimit(entry: {
+  accountId: string;
+  model: string;
+  until: number;
+  reason: string;
+  updatedAt: number;
+}): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO account_model_limits (account_id, model, until, reason, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(account_id, model) DO UPDATE SET
+         until = excluded.until,
+         reason = excluded.reason,
+         updated_at = excluded.updated_at`,
+    )
+    .run(entry.accountId, entry.model, entry.until, entry.reason, entry.updatedAt);
+}
+
+export function deleteModelLimit(accountId: string, model: string): void {
+  getDatabase()
+    .prepare(
+      "DELETE FROM account_model_limits WHERE account_id = ? AND model = ?",
+    )
+    .run(accountId, model);
+}
+
+export function deleteModelLimitsForAccount(accountId: string): void {
+  getDatabase()
+    .prepare("DELETE FROM account_model_limits WHERE account_id = ?")
+    .run(accountId);
 }
 
 export function closeDatabase(): void {

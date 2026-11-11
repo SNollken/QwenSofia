@@ -44,7 +44,8 @@ const envSchema = z
       .default(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
       ),
-    QWEN_BX_V: z.string().default("2.5.36"),
+    QWEN_BX_V: z.string().default("2.5.37"),
+    QWEN_WEB_VERSION: z.string().default("0.3.26"),
     PLAYWRIGHT_HEADLESS: z.string().default("true"),
     PLAYWRIGHT_BROWSER: z
       .enum(["chromium", "chrome", "edge"])
@@ -294,6 +295,8 @@ export const config = {
   apiKey: env.API_KEY,
   qwen: {
     baseUrl: env.QWEN_BASE_URL,
+    webVersion: env.QWEN_WEB_VERSION,
+    bxV: env.QWEN_BX_V,
     chatPoolSize: Math.max(0, parseInt(env.QWEN_CHAT_POOL_SIZE)),
     chatPoolModels: [QWEN_PRIMARY_MODEL],
     personalizationFromRequest:

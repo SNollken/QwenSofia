@@ -46,6 +46,34 @@ const TERMINAL_TOOLS = [{
   },
 }];
 
+test("tool calls never emit partial file writes or undeclared tools", () => {
+  const tools = [{
+    type: "function" as const,
+    function: {
+      name: "write_file",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" }, content: { type: "string" } },
+        required: ["path", "content"],
+      },
+    },
+  }];
+  for (const output of [
+    '<tool_call>{"name":"write_file","arguments":{"path":"a.txt","content":"partial"',
+    '<tool_call>{"name":"write_file","arguments":{"path":"a.txt","content":"partial"</tool_call>',
+    '<tool_call_write_file>{"path":"a.txt","content":"partial</tool_call_write_file>',
+    '<tool_call_begin|>write_file<|tool_call_argument_begin|>{"path":"a.txt","content":"partial</tool_call_end|>',
+    '<tool_call name="write_file"><parameter name="path">a.txt</parameter><parameter name="content">partial',
+    '<tool_call name="write_file"><parameter name="path">a.txt</parameter><parameter name="content">first</parameter><parameter name="content">second</parameter></tool_call>',
+    '<tool_call>name": "undeclared", "arguments": {"path":"a.txt"}}</tool_call>',
+  ]) {
+    const parser = new StreamingToolParser(tools);
+    const results = [...output].map((character) => parser.feed(character));
+    results.push(parser.flush());
+    assert.strictEqual(results.flatMap((result) => result.toolCalls).length, 0, output);
+  }
+});
+
 test("named XML tool envelopes recover complete parameters across every split", () => {
   const body = '<tool_name>terminal</tool_name><parameter name="command">echo "</tool>"</parameter_name><parameter name="timeout">5</parameter>';
   for (const output of [
@@ -340,7 +368,7 @@ test("StreamingToolParser: holds a fragmented named wrapper until it is complete
   });
 });
 
-test("StreamingToolParser: recovers a quoted malformed opener followed by complete JSON", () => {
+test("StreamingToolParser: a quoted malformed opener is never a tool call", () => {
   const output =
     '<tool_call"\n{"name":"search_files","arguments":{"pattern":"package.json","target":"files"}}';
 
@@ -351,13 +379,9 @@ test("StreamingToolParser: recovers a quoted malformed opener followed by comple
     const tail = parser.flush();
     const calls = [...first.toolCalls, ...second.toolCalls, ...tail.toolCalls];
 
-    assert.strictEqual(calls.length, 1, `split ${split}`);
-    assert.strictEqual(calls[0].name, "search_files");
-    assert.deepStrictEqual(calls[0].arguments, {
-      pattern: "package.json",
-      target: "files",
-    });
-    assert.strictEqual(first.text + second.text + tail.text, "");
+    assert.strictEqual(calls.length, 0, `split ${split}`);
+    assert.strictEqual(first.text + second.text + tail.text, "", `split ${split}`);
+    assert.strictEqual(tail.truncatedToolCall, true, `split ${split}`);
   }
 });
 
@@ -487,9 +511,10 @@ test("StreamingToolParser: preserves native control tokens inside Markdown code"
   const literal = "`</tool_calls_section_end|>`";
 
   const result = parser.feed(literal);
+  const tail = parser.flush();
 
-  assert.strictEqual(result.text, literal);
-  assert.strictEqual(result.toolCalls.length, 0);
+  assert.strictEqual(result.text + tail.text, literal);
+  assert.strictEqual(result.toolCalls.length + tail.toolCalls.length, 0);
 });
 
 test("StreamingToolParser: recovers direct arguments from a named closing wrapper", () => {
@@ -541,9 +566,10 @@ test("StreamingToolParser: preserves corrupt-looking markers inside code", () =>
   const literal = "`<tool_call<tool_call{}>>`";
 
   const result = parser.feed(literal);
+  const tail = parser.flush();
 
-  assert.strictEqual(result.text, literal);
-  assert.strictEqual(result.toolCalls.length, 0);
+  assert.strictEqual(result.text + tail.text, literal);
+  assert.strictEqual(result.toolCalls.length + tail.toolCalls.length, 0);
 });
 
 test("StreamingToolParser: recovers punctuated wrapper tags", () => {
@@ -675,13 +701,12 @@ test("StreamingToolParser: flush partial content", () => {
     assert.strictEqual(visibleText, `Literal ${literal}`);
   }
 
-  // Incomplete JSON in tool call - flush should recover it
+  // Truncated JSON is never completed into a call; the turn must be retried.
   const parser2 = new StreamingToolParser();
   parser2.feed('Broken tool <tool_call>{"name": "healable"');
   const flushed = parser2.flush();
-  assert.strictEqual(flushed.toolCalls.length, 1);
-  assert.strictEqual(flushed.toolCalls[0].name, "healable");
-  assert.strictEqual(flushed.truncatedToolCall, false);
+  assert.strictEqual(flushed.toolCalls.length, 0);
+  assert.strictEqual(flushed.truncatedToolCall, true);
 
   const parser3 = new StreamingToolParser();
   parser3.feed("Invalid <tool_call>NOT_JSON");
@@ -725,18 +750,17 @@ test("StreamingToolParser: preserves orphan-looking closers inside Markdown code
   assert.strictEqual(result.malformedToolCall, undefined);
 });
 
-test("StreamingToolParser: robust parsing of malformed JSON", () => {
+test("StreamingToolParser: refuses to heal unbalanced JSON arguments", () => {
   const parser = new StreamingToolParser();
 
   const res = parser.feed(
     '<tool_call>{"name": "broken", "arguments": {"a": 1</tool_call>',
   );
-  assert.strictEqual(res.toolCalls.length, 1);
-  assert.strictEqual(res.toolCalls[0].name, "broken");
-  assert.deepStrictEqual(res.toolCalls[0].arguments, { a: 1 });
+  assert.strictEqual(res.toolCalls.length, 0);
+  assert.strictEqual(res.malformedToolCall, true);
 });
 
-test("StreamingToolParser: recovers missing opening tag and flattens nested arguments", () => {
+test("StreamingToolParser: an orphan closing tag is preserved as text", () => {
   const parser = new StreamingToolParser([
     {
       type: "function",
@@ -752,12 +776,11 @@ test("StreamingToolParser: recovers missing opening tag and flattens nested argu
     },
   ]);
 
-  const res = parser.feed(
-    '{"name": "recovered", "arguments": {"arguments": {"path": "a.txt"}}}</tool_call>',
-  );
-  assert.strictEqual(res.toolCalls.length, 1);
-  assert.strictEqual(res.toolCalls[0].name, "recovered");
-  assert.deepStrictEqual(res.toolCalls[0].arguments, { path: "a.txt" });
+  const text = '{"name": "recovered", "arguments": {"arguments": {"path": "a.txt"}}}</tool_call>';
+  const res = parser.feed(text);
+  const tail = parser.flush();
+  assert.strictEqual(res.toolCalls.length + tail.toolCalls.length, 0);
+  assert.match(res.text + tail.text, /a\.txt/);
 });
 
 test("StreamingToolParser: preserves tags in non-tool text", () => {
@@ -821,15 +844,15 @@ test("StreamingToolParser: preserves literal <tool_call> inside inline code acro
   const first = parser.feed(
     "Para usar uma ferramenta, eu gero um bloco JSON envolto exatamente nas tags `",
   );
-  assert.strictEqual(
-    first.text,
-    "Para usar uma ferramenta, eu gero um bloco JSON envolto exatamente nas tags `",
-  );
   assert.strictEqual(first.toolCalls.length, 0);
 
   const second = parser.feed("<tool_call>`. A estrutura é sempre esta:");
-  assert.strictEqual(second.text, "<tool_call>`. A estrutura é sempre esta:");
-  assert.strictEqual(second.toolCalls.length, 0);
+  const tail = parser.flush();
+  assert.strictEqual(
+    first.text + second.text + tail.text,
+    "Para usar uma ferramenta, eu gero um bloco JSON envolto exatamente nas tags `<tool_call>`. A estrutura é sempre esta:",
+  );
+  assert.strictEqual(second.toolCalls.length + tail.toolCalls.length, 0);
 });
 
 test("StreamingToolParser: preserves literal <tool_call> example in fenced code block", () => {
@@ -845,8 +868,9 @@ test("StreamingToolParser: preserves literal <tool_call> example in fenced code 
   ].join("\n");
 
   const result = parser.feed(literal);
-  assert.strictEqual(result.text, literal);
-  assert.strictEqual(result.toolCalls.length, 0);
+  const tail = parser.flush();
+  assert.strictEqual(result.text + tail.text, literal);
+  assert.strictEqual(result.toolCalls.length + tail.toolCalls.length, 0);
 });
 
 test("StreamingToolParser: preserves explained literal tool_call block when tool name is undeclared", () => {
@@ -900,16 +924,14 @@ test("StreamingToolParser: maps vision query to the declared question parameter"
   });
 });
 
-test("StreamingToolParser: passes through recovered tool call with undeclared name", () => {
+test("StreamingToolParser: drops a tool call with an undeclared name", () => {
   const parser = new StreamingToolParser(TOOLS);
 
   const result = parser.feed(
     'Lead <tool_call>name": "invented_tool", "arguments": {"path": "a.txt"}}</tool_call>',
   );
 
-  assert.strictEqual(result.text, "");
-  assert.strictEqual(result.toolCalls.length, 1);
-  assert.strictEqual(result.toolCalls[0].name, "invented_tool");
+  assert.strictEqual(result.toolCalls.length, 0);
 });
 
 test("StreamingToolParser: accepts declared tool names from flat tool definitions", () => {
@@ -1080,39 +1102,46 @@ test("StreamingToolParser: regression - standard JSON tool_call format still wor
   assert.strictEqual(result.text + tail.text, "");
 });
 
-test("StreamingToolParser: intercepts raw JSON command tool calls without leaking text", () => {
-  const parser = new StreamingToolParser(TOOLS);
-  const rawLeak =
-    'Vou fazer uma auditoria completa do pipeline de streaming para identificar problemas remanescentes.json{"command": "read_file", "path": "C:/Coding/sweetly/frontend/src/components/channel/ScreenSharePiP.tsx"}json{"command": "read_file", "path": "C:/Coding/sweetly/frontend/src/features/broadcast/use-broadcast.ts"}jsonjsonjson';
+test("StreamingToolParser: preserves ambiguous raw JSON without invoking tools", () => {
+  const raw = '{"command":"read_file","path":"test.txt"}';
+  const outputs = [raw, `Exemplo: ${raw}`, `\`\`\`json\n${raw}\n\`\`\``];
 
-  const first = parser.feed(rawLeak);
-  const tail = parser.flush();
-  const calls = [...first.toolCalls, ...tail.toolCalls];
-
-  assert.strictEqual(calls.length, 2);
-  assert.strictEqual(calls[0].name, "read_file");
-  assert.deepStrictEqual(calls[0].arguments, {
-    path: "C:/Coding/sweetly/frontend/src/components/channel/ScreenSharePiP.tsx",
-  });
-  assert.strictEqual(calls[1].name, "read_file");
-  assert.deepStrictEqual(calls[1].arguments, {
-    path: "C:/Coding/sweetly/frontend/src/features/broadcast/use-broadcast.ts",
-  });
-  // No raw text or trailing json headers leaked!
-  assert.strictEqual((first.text + tail.text).trim(), "");
+  for (const output of outputs) {
+    for (let split = 0; split <= output.length; split++) {
+      const parser = new StreamingToolParser(TOOLS);
+      const parts = [parser.feed(output.slice(0, split)), parser.feed(output.slice(split)), parser.flush()];
+      assert.strictEqual(parts.map((part) => part.text).join(""), output, `split ${split}`);
+      assert.strictEqual(parts.flatMap((part) => part.toolCalls).length, 0, `split ${split}`);
+    }
+  }
 });
 
-test("StreamingToolParser: parses fenced markdown json command blocks", () => {
-  const parser = new StreamingToolParser(TOOLS);
-  const fenced =
-    'Vou ler o arquivo solicitado:\n```json\n{"command": "read_file", "path": "test.txt"}\n```\n';
+test("StreamingToolParser: a fenced call that is the whole answer still executes", () => {
+  const tag = '<tool_call>{"name":"read_file","arguments":{"path":"test.txt"}}</tool_call>';
+  for (const fence of ["```", "```json"]) {
+    const output = `${fence}\n${tag}\n\`\`\``;
+    for (let split = 0; split <= output.length; split++) {
+      const parser = new StreamingToolParser(TOOLS);
+      const parts = [parser.feed(output.slice(0, split)), parser.feed(output.slice(split)), parser.flush()];
+      const calls = parts.flatMap((part) => part.toolCalls);
+      assert.strictEqual(calls.length, 1, `${fence} split ${split}`);
+      assert.deepStrictEqual(calls[0].arguments, { path: "test.txt" });
+      assert.strictEqual(parts.map((part) => part.text).join(""), "", `${fence} split ${split}`);
+    }
+  }
+});
 
-  const first = parser.feed(fenced);
-  const tail = parser.flush();
-  const calls = [...first.toolCalls, ...tail.toolCalls];
-
-  assert.strictEqual(calls.length, 1);
-  assert.strictEqual(calls[0].name, "read_file");
-  assert.deepStrictEqual(calls[0].arguments, { path: "test.txt" });
-  assert.strictEqual((first.text + tail.text).trim(), "");
+test("StreamingToolParser: fenced examples with prose or raw JSON stay text", () => {
+  const tag = '<tool_call>{"name":"read_file","arguments":{"path":"test.txt"}}</tool_call>';
+  for (const output of [
+    `Veja o exemplo:\n\`\`\`json\n${tag}\n\`\`\``,
+    '```json\n{"name":"read_file","arguments":{"path":"test.txt"}}\n```',
+  ]) {
+    for (let split = 0; split <= output.length; split++) {
+      const parser = new StreamingToolParser(TOOLS);
+      const parts = [parser.feed(output.slice(0, split)), parser.feed(output.slice(split)), parser.flush()];
+      assert.strictEqual(parts.flatMap((part) => part.toolCalls).length, 0, `split ${split}`);
+      assert.strictEqual(parts.map((part) => part.text).join(""), output, `split ${split}`);
+    }
+  }
 });

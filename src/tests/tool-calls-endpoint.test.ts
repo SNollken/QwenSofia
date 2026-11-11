@@ -686,7 +686,7 @@ for (const stream of [false, true]) {
   });
 }
 
-test("stream: quoted malformed opener becomes search_files", async () => {
+test("stream: quoted malformed opener is never a tool call", async () => {
   const output =
     '<tool_call"\n{"name":"search_files","arguments":{"pattern":"package.json","target":"files"}}';
   const restore = setupFetchMock(() => createSseResponse([...output].map((content) =>
@@ -704,16 +704,12 @@ test("stream: quoted malformed opener becomes search_files", async () => {
         messages: [{ role: "user", content: "find package.json" }],
       }),
     }));
-    assert.strictEqual(response.status, 200);
-
-    const result = await collectStreamResult(response);
-    assert.strictEqual(result.finishReason, "tool_calls");
-    assert.strictEqual(result.content, "");
-    assert.strictEqual(result.toolCalls[0].name, "search_files");
-    assert.deepStrictEqual(JSON.parse(result.toolCalls[0].arguments), {
-      pattern: "package.json",
-      target: "files",
-    });
+    // A corrupted opener with no closing marker is an incomplete frame, not a call.
+    assert.strictEqual(response.status, 502);
+    const body = await response.json();
+    assert.strictEqual(body.error.type, "upstream_error");
+    assert.match(body.error.message, /could not recover an incomplete tool call/i);
+    assert.doesNotMatch(JSON.stringify(body), /package\.json/);
   } finally {
     restore();
   }
@@ -947,7 +943,7 @@ test("stream: ellipsis placeholder stays text and does not force length", async 
   }
 });
 
-test("non-stream: missing opening tag is recovered when closing tag is present", async () => {
+test("non-stream: a closing tag alone stays text instead of becoming a tool call", async () => {
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({
@@ -981,20 +977,17 @@ test("non-stream: missing opening tag is recovered when closing tag is present",
 
     const body = await res.json();
     const message = body.choices[0].message;
-    assert.strictEqual(message.content, null);
-    assert.strictEqual(message.tool_calls.length, 1);
-    assert.strictEqual(message.tool_calls[0].function.name, "read_file");
-    assert.deepStrictEqual(
-      JSON.parse(message.tool_calls[0].function.arguments),
-      { path: "a.txt" },
-    );
-    assert.strictEqual(body.choices[0].finish_reason, "tool_calls");
+    // A bare closing tag with no opening marker is indistinguishable from a
+    // documentation example, so it must never execute a tool.
+    assert.strictEqual(message.tool_calls, undefined);
+    assert.match(message.content, /a\.txt/);
+    assert.strictEqual(body.choices[0].finish_reason, "stop");
   } finally {
     restore();
   }
 });
 
-test("stream: missing opening tag is recovered when closing tag is present", async () => {
+test("stream: a closing tag alone stays text instead of becoming a tool call", async () => {
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({
@@ -1037,19 +1030,15 @@ test("stream: missing opening tag is recovered when closing tag is present", asy
     assert.strictEqual(res.status, 200);
 
     const result = await collectStreamResult(res);
-    assert.strictEqual(result.content, "");
-    assert.strictEqual(result.toolCalls.length, 1);
-    assert.strictEqual(result.toolCalls[0].name, "read_file");
-    assert.deepStrictEqual(JSON.parse(result.toolCalls[0].arguments), {
-      path: "a.txt",
-    });
-    assert.strictEqual(result.finishReason, "tool_calls");
+    assert.strictEqual(result.toolCalls.length, 0);
+    assert.match(result.content, /a\.txt/);
+    assert.strictEqual(result.finishReason, "stop");
   } finally {
     restore();
   }
 });
 
-test("non-stream: unclosed tool_call is recovered on flush", async () => {
+test("non-stream: unclosed tool_call is never executed", async () => {
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({
@@ -1079,24 +1068,20 @@ test("non-stream: unclosed tool_call is recovered on flush", async () => {
     });
 
     const res = await app.fetch(req);
-    assert.strictEqual(res.status, 200);
+    // No closing marker: indistinguishable from a truncation, so never execute.
+    assert.strictEqual(res.status, 502);
 
     const body = await res.json();
-    const message = body.choices[0].message;
-    assert.strictEqual(message.content, null);
-    assert.strictEqual(message.tool_calls.length, 1);
-    assert.strictEqual(message.tool_calls[0].function.name, "read_file");
-    assert.deepStrictEqual(
-      JSON.parse(message.tool_calls[0].function.arguments),
-      { path: "a.txt" },
-    );
-    assert.strictEqual(body.choices[0].finish_reason, "tool_calls");
+    assert.strictEqual(body.error.type, "upstream_error");
+    assert.strictEqual(body.error.code, "upstream_unavailable");
+    assert.match(body.error.message, /could not recover an incomplete tool call/i);
+    assert.strictEqual(body.choices, undefined);
   } finally {
     restore();
   }
 });
 
-test("stream: unclosed tool_call is recovered on flush", async () => {
+test("stream: unclosed tool_call is never executed", async () => {
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({
@@ -1126,16 +1111,13 @@ test("stream: unclosed tool_call is recovered on flush", async () => {
     });
 
     const res = await app.fetch(req);
-    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.status, 502);
 
-    const result = await collectStreamResult(res);
-    assert.strictEqual(result.content, "");
-    assert.strictEqual(result.toolCalls.length, 1);
-    assert.strictEqual(result.toolCalls[0].name, "read_file");
-    assert.deepStrictEqual(JSON.parse(result.toolCalls[0].arguments), {
-      path: "a.txt",
-    });
-    assert.strictEqual(result.finishReason, "tool_calls");
+    const body = await res.json();
+    assert.strictEqual(body.error.type, "upstream_error");
+    assert.strictEqual(body.error.code, "upstream_unavailable");
+    assert.match(body.error.message, /could not recover an incomplete tool call/i);
+    assert.strictEqual(body.choices, undefined);
   } finally {
     restore();
   }
@@ -1379,11 +1361,11 @@ for (const stream of [false, true]) {
   });
 }
 
-test("stream: recovered tools, finish reason and usage precede the only DONE", async () => {
+test("stream: complete tool call, finish reason and usage precede the only DONE", async () => {
   const restore = setupFetchMock(() =>
     createSseResponse([
       `data: ${JSON.stringify({ choices: [{ delta: { phase: "answer", content:
-        '<tool_call>{"name":"read_file","arguments":{"path":"a.txt"}}',
+        '<tool_call>{"name":"read_file","arguments":{"path":"a.txt"}}</tool_call>',
       } }] })}`,
     ]),
   );

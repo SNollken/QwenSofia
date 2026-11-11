@@ -85,7 +85,9 @@ export function getIncrementalDelta(
   const probeSuffix = oldStr.slice(-Math.min(16, oldStr.length));
   const sharesContent =
     (probePrefix.length >= 6 && newStr.includes(probePrefix)) ||
-    (probeSuffix.length >= 6 && newStr.includes(probeSuffix));
+    (probeSuffix.length >= 6 &&
+      newStr.indexOf(probeSuffix) >= 0 &&
+      newStr.indexOf(probeSuffix) < oldStr.length);
 
   if (commonPrefixLen >= threshold || (sharesContent && newStr.length >= oldStr.length)) {
     // If it's cumulative, the new delta can ONLY be characters that have NOT

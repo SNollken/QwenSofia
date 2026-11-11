@@ -70,6 +70,14 @@ test("getIncrementalDelta: does not suffer from false-positive repetitive word o
   );
 });
 
+test("getIncrementalDelta: preserves native tool markers in incremental chunks", () => {
+  const first = "<tool_call_calls_section_";
+  const second = 'begin|><tool_call_begin|>read_file<|tool_call_argument_begin|>{"path":"handoff.md"}\n</tool_call_end|>\n</tool_calls_section_end|>';
+  const result = getIncrementalDelta(first, second);
+  assert.strictEqual(result.delta, second);
+  assert.strictEqual(result.matchedContent, first + second);
+});
+
 test("getIncrementalDelta: handles long cumulative streams without duplicating prior content", () => {
   const prefix = "a".repeat(2500);
   const accumulated = `${prefix}END`;

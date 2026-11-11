@@ -52,7 +52,7 @@ export function buildToolInstructions(
     "\n" +
     toolClose +
     "\n\nCRITICAL RULES:\n" +
-    "1. ONLY use the tags above for tool calling. NEVER output raw JSON without tags.\n" +
+    "1. ONLY use the tags above for tool calling. NEVER output raw JSON without tags or wrap a tool call in a Markdown code block.\n" +
     "2. You can call multiple tools by outputting multiple " +
     toolOpen +
     " blocks consecutively.\n" +

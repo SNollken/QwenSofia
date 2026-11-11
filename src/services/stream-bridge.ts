@@ -812,7 +812,18 @@ export async function browserUiStreamFetch(
                 htmlEl.style.display = "none";
               });
 
+              // The DOM drops the Markdown fences the model wrote; restore them so
+              // the parser can tell a rendered code example from a real call.
+              const fences: Text[] = [];
+              last.querySelectorAll("pre").forEach((pre) => {
+                const open = document.createTextNode("\n```\n");
+                const close = document.createTextNode("\n```\n");
+                pre.before(open);
+                pre.after(close);
+                fences.push(open, close);
+              });
               let text = (last as HTMLElement).innerText || "";
+              fences.forEach((node) => node.remove());
 
               savedDisplays.forEach((item) => {
                 item.el.style.display = item.display;

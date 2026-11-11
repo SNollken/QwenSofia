@@ -6,7 +6,16 @@ import {
 } from "./auth-playwright.ts";
 import { v4 as uuidv4 } from "uuid";
 import { UpstreamRateLimit, UpstreamError, AuthError } from "../core/errors.ts";
-import { buildQwenRequestHeaders, QWEN_WEB_VERSION } from "./qwen-headers.ts";
+import { buildQwenRequestHeaders } from "./qwen-headers.ts";
+import { getQwenWebVersion } from "./qwen-versions.ts";
+import {
+  applyBearerToken,
+  ensureUsableToken,
+  getUsableBearerToken,
+  hasExpiredToken,
+  isBearerTokenExpired,
+  renewAccessToken,
+} from "./token-refresh.ts";
 import { config } from "../core/config.ts";
 import { logger, isToolcallDebugEnabled } from "../core/logger.ts";
 import { estimateTokenCount } from "../utils/context-truncation.ts";
@@ -25,8 +34,14 @@ import {
   browserStreamFetch,
   browserUiStreamFetch,
 } from "./stream-bridge.ts";
-import { markAccountRateLimited } from "../core/account-manager.ts";
+import {
+  markAccountRateLimited,
+  msUntilMidnight,
+  quarantineAccount,
+} from "../core/account-manager.ts";
+import { markAccountModelLimited } from "../core/account-model-limits.ts";
 import { rotateTorCircuitForProxy } from "../utils/tor-rotator.ts";
+import { detectQuotaLimitMessage } from "../utils/quota-detector.ts";
 import {
   MAX_PAYLOAD_SIZE,
   QWEN_PRIMARY_CONTEXT_WINDOW,
@@ -35,15 +50,23 @@ import {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function isTmdChallenge(text: string): boolean {
+export function isTmdChallenge(text: string, accountId?: string): boolean {
   if (!text) return false;
-  return (
+  const hit =
     text.includes("FAIL_SYS_USER_VALIDATE") ||
     text.includes("_____tmd_____") ||
     text.includes("RGV587_ERROR") ||
     text.includes("doctypehtml") ||
-    text.includes("<html")
-  );
+    text.includes("<html");
+  if (hit && accountId && accountId !== "global") {
+    try {
+      quarantineAccount(accountId, "TMDChallenge", 30 * 60 * 1000);
+      void rotateTorCircuitForProxy(process.env.PLAYWRIGHT_PROXY);
+    } catch {
+      /* best-effort */
+    }
+  }
+  return hit;
 }
 
 function addIdleTimeoutToStream(
@@ -571,6 +594,9 @@ function buildCapturedQwenHeaders(
     bxV: headers["bx-v"],
     chatSessionId: options.chatSessionId,
     extra: {
+      ...(headers["authorization"]
+        ? { authorization: headers["authorization"] }
+        : {}),
       ...(options.referer ? { Referer: options.referer } : {}),
       ...(options.extra || {}),
     },
@@ -826,8 +852,8 @@ export async function syncQwenRequestPersonalization(
   // Layer 1: First attempt
   ({ raw, json } = await attemptPost(headers));
 
-  // Layer 2: On 401/Unauthorized → refresh session and retry once
-  const isUnauthorized =
+  // Layer 2: On 401/Unauthorized → renew the bearer and retry once
+  let isUnauthorized =
     json?.success === false &&
     (json?.data?.code === "Unauthorized" ||
       json?.data?.code === "unauthorized" ||
@@ -835,10 +861,21 @@ export async function syncQwenRequestPersonalization(
         json.data.details.includes("401")));
 
   if (isUnauthorized) {
-    console.warn(
-      `[Qwen] Personalization 401 — skipping personalization update for account=${cacheKey}`,
-    );
-    return;
+    const renewed =
+      accountId && accountId !== "global"
+        ? await renewAccessToken(accountId)
+        : null;
+    if (renewed) {
+      ({ raw, json } = await attemptPost(applyBearerToken(headers, renewed)));
+      isUnauthorized = json?.success === false && json?.data?.code === "Unauthorized";
+    }
+    if (isUnauthorized) {
+      markTokenExpired(accountId);
+      console.warn(
+        `[Qwen] Personalization 401 — skipping personalization update for account=${cacheKey}`,
+      );
+      return;
+    }
   }
 
   // Layer 3: Check final result — non-fatal on failure
@@ -1154,7 +1191,8 @@ function forwardAbortSignal(
   return () => source.removeEventListener("abort", abort);
 }
 
-async function createQwenChatSession(
+/** @internal exported so the chat-creation payload can be tested. */
+export async function createQwenChatSession(
   headers: Record<string, string>,
   model: string,
   signal?: AbortSignal,
@@ -1179,7 +1217,7 @@ async function createQwenChatSession(
             accept: "application/json, text/plain, */*",
             "content-type": "application/json",
             source: "web",
-            version: "0.3.19",
+            version: getQwenWebVersion(),
             origin: config.qwen.baseUrl,
             referer: `${config.qwen.baseUrl}/c/new-chat`,
             ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
@@ -1559,10 +1597,48 @@ function isQwenQuotaLimitMessage(details: string): boolean {
   );
 }
 
-function parseQwenJsonError(
+/** Marks the account's bearer as dead so the next call picks another one. */
+function markTokenExpired(accountId?: string): void {
+  if (!accountId || accountId === "global") return;
+  markAccountRateLimited(accountId, 30 * 60 * 1000, "TokenExpired");
+}
+
+/**
+ * Records a daily-limit notice for the account/model pair so scheduling stops
+ * offering that model until midnight. No-op for generic rate-limit messages.
+ */
+function markDailyQuotaLimit(
+  accountId: string | undefined,
+  model: string | undefined,
+  text: string,
+): void {
+  if (!accountId || accountId === "global") return;
+  const quota = detectQuotaLimitMessage(text);
+  if (!quota.isQuotaLimit) return;
+  const limitedModel = quota.model ?? model;
+  if (!limitedModel) return;
+  try {
+    markAccountModelLimited(
+      accountId,
+      limitedModel,
+      msUntilMidnight(),
+      "DailyLimit",
+    );
+  } catch (err) {
+    logger.debug("[Qwen] failed to persist daily model limit", {
+      accountId,
+      model: limitedModel,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** @internal exported so upstream error classification can be tested. */
+export function parseQwenJsonError(
   raw: string,
   status: number,
   accountId?: string,
+  model?: string,
 ): Error | null {
   let errorJson: any;
   try {
@@ -1653,6 +1729,7 @@ function parseQwenJsonError(
       (typeof details === "string" &&
         (details.includes("login") || details.includes("session")))
     ) {
+      markTokenExpired(accountId);
       return new QwenSessionExpiredError(
         `Session expired: ${details}`,
         accountId || "global",
@@ -1670,6 +1747,9 @@ function parseQwenJsonError(
       status === 429 ||
       (typeof details === "string" && isQwenQuotaLimitMessage(details))
     ) {
+      if (typeof details === "string") {
+        markDailyQuotaLimit(accountId, model, details);
+      }
       return new UpstreamRateLimit(message);
     }
 
@@ -1683,6 +1763,7 @@ function parseQwenJsonError(
         ? errorJson.error
         : errorJson.error.message || JSON.stringify(errorJson.error);
     if (isQwenQuotaLimitMessage(message)) {
+      markDailyQuotaLimit(accountId, model, message);
       return new UpstreamRateLimit(`Qwen upstream error: ${message}`);
     }
 
@@ -1777,7 +1858,7 @@ export async function createQwenStream(
     options?.signal,
   );
   console.log(`[TRACE 7] Headers retrieved for ${accountId}!`);
-  const { headers, parentMessageId } = captured;
+  let { headers, parentMessageId } = captured;
 
   let createdNewChat = false;
   let chatSessionId: string | null | undefined;
@@ -2034,6 +2115,27 @@ export async function createQwenStream(
     }
   }
 
+  // Before the HTTP fetch, ensure the bearer is usable (short-lived JWT).
+  if (accountId && accountId !== "global") {
+    if (
+      isBearerTokenExpired(headers["authorization"]) ||
+      hasExpiredToken(accountId)
+    ) {
+      const pageForToken = page ?? getPageForAccount(accountId);
+      if (!(await ensureUsableToken(accountId, pageForToken))) {
+        markTokenExpired(accountId);
+        throw withCreatedChatMetadata(
+          new QwenSessionExpiredError(
+            "Session expired and token renewal failed before stream request",
+            accountId,
+          ),
+        );
+      }
+    }
+    const usable = getUsableBearerToken(accountId);
+    if (usable) headers = applyBearerToken(headers, usable);
+  }
+
   try {
     let response: Response;
     try {
@@ -2072,11 +2174,7 @@ export async function createQwenStream(
     if (response.ok && responseContentType.includes("application/json")) {
       const errText = await response.text().catch(() => "");
 
-      if (
-        errText.includes("FAIL_SYS_USER_VALIDATE") ||
-        errText.includes("_____tmd_____") ||
-        errText.includes("RGV587_ERROR")
-      ) {
+      if (isTmdChallenge(errText, accountId)) {
         logger.warn(
           "[Qwen] TMD challenge detected in 200 OK; account will rotate.",
         );
@@ -2091,7 +2189,7 @@ export async function createQwenStream(
       }
 
       throw withCreatedChatMetadata(
-        parseQwenJsonError(errText, response.status, accountId) ??
+        parseQwenJsonError(errText, response.status, accountId, model) ??
           new QwenUpstreamError(
             `Qwen returned non-stream JSON response: ${errText.substring(0, 300)}`,
             "NonStreamJsonResponse",
@@ -2108,7 +2206,7 @@ export async function createQwenStream(
       if (
         response.status === 405 ||
         response.status === 403 ||
-        isTmdChallenge(errText)
+        isTmdChallenge(errText, accountId)
       ) {
         logger.warn(
           `[Qwen] TMD anti-bot / WAF challenge (${response.status}) detected. Quarantining account ${accountId || "unknown"}.`,
@@ -2124,6 +2222,73 @@ export async function createQwenStream(
             403,
           ),
         );
+      }
+
+      // 401/Unauthorized: renew the bearer once and retry the request.
+      if (response.status === 401 || response.status === 403) {
+        const shouldRetryAuth =
+          response.status === 401 ||
+          /unauthorized|login|session|token/i.test(errText);
+        if (shouldRetryAuth && accountId && accountId !== "global") {
+          const renewed = await renewAccessToken(accountId, page);
+          if (renewed) {
+            const retryHeaders = buildCapturedQwenHeaders(headers, {
+              chatSessionId,
+              extra: {
+                "x-accel-buffering": "no",
+                authorization: renewed,
+              },
+            });
+            try {
+              response = await fetch(url, {
+                method: "POST",
+                headers: retryHeaders,
+                body: payloadJson,
+                signal: controller.signal,
+              });
+              if (response.ok && response.body) {
+                const retriedCt = response.headers.get("content-type") || "";
+                if (!retriedCt.includes("application/json")) {
+                  return {
+                    stream: wrapUpstreamStream(response.body, controller),
+                    headers: { ...headers, authorization: renewed },
+                    uiSessionId: chatSessionId || "",
+                    controller,
+                    accountId: accountId ?? "global",
+                    createdNewChat,
+                    tokenEstimationContext,
+                  };
+                }
+              }
+            } catch {
+              /* fall through to expiry handling */
+            }
+            const retryText = !response.ok
+              ? await response.text().catch(() => "")
+              : "";
+            const retryParsed = parseQwenJsonError(
+              retryText,
+              response.status,
+              accountId,
+              model,
+            );
+            markTokenExpired(accountId);
+            throw withCreatedChatMetadata(
+              retryParsed ??
+                new QwenSessionExpiredError(
+                  `Session expired after token renewal: ${retryText.slice(0, 200)}`,
+                  accountId,
+                ),
+            );
+          }
+          markTokenExpired(accountId);
+          throw withCreatedChatMetadata(
+            new QwenSessionExpiredError(
+              `Session expired and token renewal failed: ${errText.slice(0, 200)}`,
+              accountId,
+            ),
+          );
+        }
       }
 
       // Handle 502/503/504 as retryable upstream unavailability
@@ -2146,6 +2311,7 @@ export async function createQwenStream(
             errText,
             response.status,
             accountId,
+            model,
           );
           if (parsedError) {
             throw withCreatedChatMetadata(parsedError);
